@@ -1,167 +1,49 @@
-local a = debug
-local b = debug.sethook
-local c = debug.getinfo
-local d = debug.traceback
-local e = load
-local f = loadstring or load
-local g = pcall
-local h = xpcall
-local i = error
-local j = type
-local k = getmetatable
-local l = rawequal
-local m = tostring
-local n = tonumber
-local o = io
-local p = os
-local q = {}
--- ANTI-DETECTION BYPASS
-local _old_enum = Enum
-Enum = setmetatable({}, {
-    __index = function(t, k)
-        if k == "GetEnums" then
-            return function(self)
-                local enums = {}
-                for k2, v2 in pairs(self) do
-                    if type(k2) == "string" and type(v2) ~= "function" and k2 ~= "GetEnums" then
-                        table.insert(enums, v2)
-                    end
-                end
-                return enums
-            end
-        end
-        return _old_enum[k]
-    end
-})
-q.__index = q
+local warn = warn or function() end
 
-local r, BLOCKED_OUTPUT_PATTERNS = (function()
-local r = {
-    MAX_DEPTH = 50,
-    MAX_TABLE_ITEMS = 10000,
+local _origPcall = pcall
+local _origXpcall = xpcall
+local _origError = error
+
+local debugLibrary = debug
+_G._VERSION = "Luau"
+local setHook = debug.sethook
+local getInfo = debug.getinfo
+local getTraceback = debug.traceback
+local loadFunction = load
+local loadStringFunction = loadstring or load
+local pcallFunction = pcall
+local xpcallFunction = xpcall
+local errorFunction = error
+local typeFunction = type
+local getMetatableFunction = getmetatable
+local rawEqualFunction = rawequal
+local toStringFunction = tostring
+local toNumberFunction = tonumber
+local ioLibrary = io
+local osLibrary = os
+local pairsFunction = pairs
+local ipairsFunction = ipairs
+local tableUnpackFunction = table.unpack or unpack
+local proxyTable = {}
+proxyTable.__index = proxyTable
+local configuration = {
+    MAX_DEPTH = 15,
+    MAX_TABLE_ITEMS = 150,
     OUTPUT_FILE = "dumped_output.lua",
     VERBOSE = false,
     TRACE_CALLBACKS = true,
-    TIMEOUT_SECONDS = 120,
-    MAX_REPEATED_LINES = 200,
-    MIN_DEOBF_LENGTH = 50,
-    MAX_OUTPUT_SIZE = 200 * 1024 * 1024,
+    TIMEOUT_SECONDS = 6.57,
+    MAX_REPEATED_LINES = 8,
+    MIN_DEOBF_LENGTH = 150,
+    MAX_OUTPUT_SIZE = 6 * 1024 * 1024,
     CONSTANT_COLLECTION = true,
-    INSTRUMENT_LOGIC = true,
-    DUMP_GLOBALS = true,
-    DUMP_ALL_STRINGS = false,
-    DUMP_WAD_STRINGS = false,
-    DUMP_DECODED_STRINGS = false,
-    DUMP_LIGHTCATE_STRINGS = false,
-    EMIT_XOR = false,
-    DUMP_UPVALUES = true,
-    MAX_UPVALUES_PER_FUNCTION = 200,
-    DUMP_GC_SCAN = true,
-    DUMP_INSTANCE_CREATIONS = true,
-    DUMP_SCRIPT_LOADS = true,
-    DUMP_REMOTE_SUMMARY = true,
-    MAX_GC_OBJECTS = 500,
-    MAX_GC_SCAN_FUNCTIONS = 500,
-    MAX_INSTANCE_CREATIONS = 1000,
-    MAX_SCRIPT_LOADS = 200,
-    MAX_SCRIPT_LOAD_SNIPPET = 80,
-    DUMP_FUNCTIONS = true,
-    DUMP_METATABLES = true,
-    DUMP_CLOSURES = true,
-    DUMP_REMOTE_CALLS = true,
-    DUMP_CONSTANTS = true,
-    DUMP_HOOKS = true,
-    DUMP_SIGNALS = true,
-    DUMP_ATTRIBUTES = true,
-    DUMP_PROPERTIES = true,
-    TRACK_ENV_WRITES = true,
-    TRACK_ENV_READS = false,
-    COLLECT_ALL_CALLS = true,
-    EMIT_COMMENTS = true,
-    STRIP_WHITESPACE = false,
-    MAX_STRING_LENGTH = 65536,
-    MAX_PROXY_DEPTH = 32,
-    MAX_HOOK_CALLS = 500,
-    MAX_REMOTE_CALLS = 1000,
-    MAX_SIGNAL_CALLBACKS = 100,
-    MAX_CLOSURE_REFS = 500,
-    MAX_CONST_PER_FUNCTION = 512,
-    MAX_DEFERRED_HOOKS = 200,
-    OBFUSCATION_THRESHOLD = 0.35,
-    INLINE_SMALL_FUNCTIONS = true,
-    EMIT_LOOP_COUNTER = false,
-    EMIT_CALL_GRAPH = true,
-    EMIT_STRING_REFS = true,
-    EMIT_TYPE_ANNOTATIONS = false,
-    LOOP_DETECT_THRESHOLD = 100,
-    ENVLOGGER_RUN_SUMMARY = false,
-    ENVLOGGER_INTERN_POOLS = false,
-    ENVLOGGER_DIAGNOSTICS = false,
-    MAX_LINES_PER_SECTION = 10000,
-    ENVLOGGER_LABEL_GLOBAL_SOURCE = false,
-    DUMP_PROPERTY_STORE = true,
-    DUMP_HOOK_CALLS = true,
-    DUMP_LOOP_SUMMARY = true,
-    DUMP_COUNTERS = true,
-    DUMP_RUNTIME_POINTERS = true,
-    DUMP_OBFUSCATOR_FINGERPRINT = true,
-    DUMP_THREAT_ASSESSMENT = true,
-    DUMP_TIMELINE = true,
-    LOOP_SUMMARY_TOP_N = 25,
-    THREAT_SAMPLE_CAP = 20,
-    THREAT_SCAN_GLOBAL_TABLE = true,
-    TIMELINE_CAP = 200,
+    INSTRUMENT_LOGIC = true
 }
-local BLOCKED_OUTPUT_PATTERNS = {
-    "os%.execute",
-    "os%.getenv",
-    "os%.exit",
-    "os%.remove",
-    "os%.rename",
-    "os%.tmpname",
-    "io%.open",
-    "io%.popen",
-    "io%.lines",
-    "io%.read",
-    "io%.write",
-    "total %d",
-    "^drwx", "^%-rwx",
-    "^[dD]irectory of ",
-    "[Vv]olume in drive",
-    "/etc/",
-    "/home/",
-    "/root/",
-    "/var/",
-    "/tmp/",
-    "/proc/",
-    "/sys/",
-    "C:\\[Uu]sers\\",
-    "C:\\[Ww]indows\\",
-    "C:\\[Pp]rogram",
-    "PATH=",
-    "HOME=",
-    "USER=",
-    "SHELL=",
-    "TOKEN%s*=",
-    "SECRET%s*=",
-    "PASSWORD%s*=",
-    "API_KEY%s*=",
-    "WEBHOOK%s*=",
-    "Nz[A-Za-z0-9_%-]+%.[A-Za-z0-9_%-]+%.[A-Za-z0-9_%-]+",
-    "discord%.com/api/webhooks/",
-    "discordapp%.com/api/webhooks/",
-    "ghp_[A-Za-z0-9]+",
-    "gho_[A-Za-z0-9]+",
-    "ghs_[A-Za-z0-9]+",
-}
-return r, BLOCKED_OUTPUT_PATTERNS
-end)()
-
-local s = arg and arg[3]
-if s then
-    print("[Dumper] Auto-Input Key Detected: " .. tostring(s))
+local inputKey = (arg and arg[3]) or "NoKey"
+if arg and arg[3] then
+    print("[Dumper] Auto-Input Key Detected: " .. toStringFunction(inputKey))
 end
-local t = {
+local dumperState = {
     output = {},
     indent = 0,
     registry = {},
@@ -179,362 +61,422 @@ local t = {
     last_emitted_line = nil,
     repetition_count = 0,
     current_size = 0,
-    lar_counter = 0,
-    -- RemoteEvent BP
-    remote_events = {},
-    remote_functions = {},
-    remote_callbacks = {},
-    -- Tools BP
-    tools = {},
-    equipped_tool = nil,
-    tool_actions = {},
-    -- DLL BP
-    dlls = {},
-    dll_exports = {},
-    dll_calls = {},
-    -- Instance Visibility BP
-    instance_visibility = {},
-    hidden_instances = {},
-    -- Explorer BP
-    explorer_data = {},
-    instance_tree = {},
+    ls_counter = 0
 }
-
-local _fflags = {}
-local _fflags_defaults = {
-    StepMaxWorld = "30", WorldStepMax = "30", AngularVelociryLimit = "360",
-    MaxTimestepMultiplierAcceleration = "2147483647", MaxTimestepMultiplierBuoyancy = "2147483647",
-    MaxTimestepMultiplierContstraint = "2147483647", MaxDataPacketPerSend = "2147483647",
-    ServerMaxBandwith = "52", PhysicsSenderMaxBandwidthBps = "20000", S2PhysicsSenderRate = "15000",
-    MaxMissedWorldStepsRemembered = "-2147483648", LargeReplicatorEnabled9 = "true",
-    LargeReplicatorWrite5 = "true", LargeReplicatorRead5 = "true", LargeReplicatorSerializeRead3 = "true",
-    LargeReplicatorSerializeWrite4 = "true", NextGenReplicatorEnabledWrite4 = "true",
-    GameNetPVHeaderLinearVelocityZeroCutoffExponent = "-5000",
-    GameNetPVHeaderRotationalVelocityZeroCutoffExponent = "-5000",
-    CheckPVDifferencesForInterpolationMinVelThresholdStudsPerSecHundredth = "1",
-    CheckPVDifferencesForInterpolationMinRotVelThresholdRadsPerSecHundredth = "1",
-    CheckPVCachedVelThresholdPercent = "10", CheckPVCachedRotVelThresholdPercent = "10",
-    CheckPVLinearVelocityIntegrateVsDeltaPositionThresholdPercent = "1",
-    InterpolationFramePositionThresholdMillionth = "5", InterpolationFrameVelocityThresholdMillionth = "5",
-    InterpolationFrameRotVelocityThresholdMillionth = "5",
-    TimestepArbiterVelocityCriteriaThresholdTwoDt = "2147483646",
-    TimestepArbiterHumanoidLinearVelThreshold = "1", TimestepArbiterHumanoidTurningVelThreshold = "1",
-    TimestepArbiterOmegaThou = "1073741823", SimExplicitlyCappedTimestepMultiplier = "2147483646",
-    StreamJobNOUVolumeCap = "2147483647", StreamJobNOUVolumeLengthCap = "2147483647",
-    ReplicationFocusNouExtentsSizeCutoffForPauseStuds = "2147483647",
-    SimOwnedNOUCountThresholdMillionth = "2147483647", GameNetDontSendRedundantDeltaPositionMillionth = "1",
-    GameNetDontSendRedundantNumTimes = "1", MaxAcceptableUpdateDelay = "1",
-    DebugSendDistInSteps = "-2147483648", DisableDPIScale = "true"
+local _at = {
+    mem          = {},
+    tags         = {},
+    sigs         = {},
+    acts         = {},
+    json         = {},
+    enum         = {},
+    svcCache     = {},
+    typeOverride = {},
+    connState    = {},
+    debugIds     = {},
+    debugIdCtr   = 0,
+    instTags     = {},
+    attrs        = {},
+    children     = {},
+    threadLike   = {},
+    vectors      = {},
+    buffers      = {},
+    userdata     = {},
+    localPlayer  = nil,
+    weldRegistry = {},
+    services     = {},
+    folders      = {},
+    files        = {},
+    refBase      = {},
+    metaHooks    = {},
+    currentNamecallMethod = nil,
+    inMetaHook   = false,
+    pendingHeartbeat = {},
+    locEntries = {},
+    signalCallbacks = {},  -- AT5: live signal firing
+    animateScript = nil,   -- AT3: getrunningscripts
 }
-
-local s = arg[3] or "NoKey"
-local u = tonumber(arg[4]) or tonumber(arg[3]) or 123456789
-local v = {}
-local function w(x)
-    if j(x) ~= "table" then
+setmetatable(_at.debugIds, {__mode = "k"})
+setmetatable(_at.instTags, {__mode = "k"})
+setmetatable(_at.attrs, {__mode = "k"})
+setmetatable(_at.children, {__mode = "k"})
+setmetatable(_at.threadLike, {__mode = "k"})
+setmetatable(_at.vectors, {__mode = "k"})
+setmetatable(_at.buffers, {__mode = "k"})
+setmetatable(_at.userdata, {__mode = "k"})
+setmetatable(_at.refBase, {__mode = "k"})
+local function _getDebugId(p)
+    if not _at.debugIds[p] then
+        _at.debugIdCtr = _at.debugIdCtr + 1
+        local n = _at.debugIdCtr
+        _at.debugIds[p] = toStringFunction(n * 17 + 3) .. "-" .. toStringFunction(n * 97 + 11)
+    end
+    return _at.debugIds[p]
+end
+local function _removeChild(parent, child)
+    local list = parent and _at.children[parent]
+    if not list then return end
+    for i = #list, 1, -1 do
+        if list[i] == child then table.remove(list, i) end
+    end
+end
+local function _setParent(child, parent)
+    local oldParent = dumperState.parent_map[child]
+    if oldParent == parent then return end
+    _removeChild(oldParent, child)
+    dumperState.parent_map[child] = parent
+    if parent then
+        _at.children[parent] = _at.children[parent] or {}
+        table.insert(_at.children[parent], child)
+        -- skip signal firing for internal proxy types
+        local childType = _at.typeOverride[child]
+        local parentType = _at.typeOverride[parent]
+        if childType == "RBXScriptSignal" or childType == "RBXScriptConnection"
+        or parentType == "RBXScriptSignal" or parentType == "RBXScriptConnection" then
+            return
+        end
+        -- fire ChildAdded on direct parent only
+        if _at.signalCallbacks[parent] then
+            for _, cb in ipairsFunction(_at.signalCallbacks[parent].ChildAdded or {}) do
+                pcallFunction(cb, child)
+            end
+        end
+        -- fire DescendantAdded on direct parent and its ancestors
+        local ancestor = parent
+        while ancestor do
+            if _at.signalCallbacks[ancestor] then
+                for _, cb in ipairsFunction(_at.signalCallbacks[ancestor].DescendantAdded or {}) do
+                    pcallFunction(cb, child)
+                end
+            end
+            ancestor = dumperState.parent_map[ancestor]
+        end
+    end
+end
+local function _isDescendantOf(child, parent)
+    local cur = dumperState.parent_map[child]
+    while cur do
+        if cur == parent then return true end
+        cur = dumperState.parent_map[cur]
+    end
+    return false
+end
+local function _getAllDescendants(root, out)
+    out = out or {}
+    for _, child in ipairsFunction(_at.children[root] or {}) do
+        table.insert(out, child)
+        _getAllDescendants(child, out)
+    end
+    return out
+end
+local numericArg = (arg and toNumberFunction(arg[4])) or (arg and toNumberFunction(arg[3])) or 123456789
+local proxyMarker = {}
+local function isProxyTable(target)
+    if typeFunction(target) ~= "table" then
         return false
     end
-    local y, z =
-        pcall(
-        function()
-            return rawget(x, v) == true
-        end
-    )
-    return y and z
+    local success, result = pcallFunction( function() return rawget(target, proxyMarker) == true end )
+    return success and result
 end
-local function A(x)
-    if j(x) == "number" then
-        return x
-    end
-    if w(x) then
-        return rawget(x, "__value") or 0
+local function getProxyValue(target)
+    if isProxyTable(target) then
+        return rawget(target, "__value") or 0
     end
     return 0
 end
-local e = loadstring or load
-local B = print
-local C = warn or function() end
-local D = pairs
-local E = ipairs
-local j = type
-local m = tostring
-local F = {}
-local function G(x)
-    if j(x) ~= "table" then
+local loadStringFunction = loadstring or load
+local printFunction = print
+local warnFunction = warn or function() end
+local pairsFunction = pairs
+local ipairsFunction = ipairs
+local typeFunction = type
+local toStringFunction = tostring
+local proxyList = {}
+local function isProxy(target)
+    if typeFunction(target) ~= "table" then
         return false
     end
-    local y, z =
-        pcall(
-        function()
-            return rawget(x, F) == true
-        end
-    )
-    return y and z
+    local success, result = pcallFunction( function() return rawget(target, proxyList) == true end )
+    return success and result
 end
-local function H(x)
-    if not G(x) then
+local function getProxyId(target)
+    if not isProxy(target) then
         return nil
     end
-    return rawget(x, "__proxy_id")
+    return rawget(target, "__proxy_id")
 end
-local function I(J)
-    if j(J) ~= "string" then
+local function processString(inputString)
+    if typeFunction(inputString) ~= "string" then
         return '"'
     end
-    local K = {}
-    local L, M = 1, #J
-    local function N(O)
-        return O:gsub(
-            "\\\\(.)",
-            function(P)
-                if P:match('[abfnrtv\\\\%\'%\\"%[%]0-9xu]') then
-                    return "" .. P
-                end
-                return P
+    local outputParts = {}
+    local currentIndex, totalLength = 1, #inputString
+    local function cleanEscapes(content)
+        return content:gsub( "(.)", function(escapedChar)
+            if escapedChar:match('[abfnrtv%\'%"%[%]0-9xu]') then
+                return "" .. escapedChar
             end
-        )
+            return escapedChar
+        end )
     end
-    local function Q(R)
-        if not R or R == '"' then
+    local function stripLuauSyntax(rawCode)
+        if not rawCode or rawCode == "" then
+            return rawCode
+        end
+        rawCode = rawCode:gsub("\239\187\191", "")
+        rawCode = rawCode:gsub("r\n", "\n"):gsub("r", "\n")
+        rawCode = rawCode:gsub("\226\128\168", "\n"):gsub("\226\128\169", "\n")
+        rawCode = rawCode:gsub("%-%-!%a+[^\n]*", "")
+        rawCode = rawCode:gsub("([^\n]*)", function(line)
+            if line:match("^%s*export%s+type%s+") or line:match("^%s*type%s+[%a_][%w_]*%s*=") then
+                return "-- " .. line
+            end
+            return line
+        end)
+        rawCode = rawCode:gsub("local%s+([%a_][%w_]*)%s*<[%a_][%w_]*>%s*=", "local %1 =")
+        rawCode = rawCode:gsub("(function%s+[%a_][%w_%.:]*)%s*<[^>\n%(]+>%s*%(", "%1(")
+        rawCode = rawCode:gsub("([%(%s,])%.%.%.%s*:%s*[%a_][%w_%.]*%??", "%1...")
+        rawCode = rawCode:gsub("([%(%s,])([%a_][%w_]*)%s*:%s*[%a_][%w_%.]*%s*%b<>%??", "%1%2")
+        rawCode = rawCode:gsub("([%(%s,])([%a_][%w_]*)%s*:%s*[%a_][%w_%.]*%??(%s*[%),=])", "%1%2%3")
+        rawCode = rawCode:gsub("%)%s*:%s*[%a_][%w_%.]*%s*%b<>%??", ")")
+        rawCode = rawCode:gsub("%)%s*:%s*[%a_][%w_%.]*%??(%s*[%),=])", ")%1")
+        rawCode = rawCode:gsub("%s*::%s*[%a_][%w_%.]*%s*%b<>%??", "")
+        rawCode = rawCode:gsub("%s*::%s*[%a_][%w_%.]*%??", "")
+        return rawCode
+    end
+    local function parseExpression(rawCode)
+        if not rawCode or rawCode == '"' then
             return ""
         end
-        R =
-            R:gsub(
-            "0[bB]([01_]+)",
-            function(S)
-                local T = S:gsub("_", "")
-                local U = n(T, 2)
-                return U and m(U) or "0"
-            end
-        )
-        R =
-            R:gsub(
-            "0[xX]([%x_]+)",
-            function(S)
-                local T = S:gsub("_", '"')
-                return "0x" .. T
-            end
-        )
-        while R:match("%d_+%d") do
-            R = R:gsub("(%d)_+(%d)", "%1%2")
+        rawCode = stripLuauSyntax(rawCode)
+        rawCode = rawCode:gsub( "0[bB]([01_]+)", function(binaryString)
+            local cleanBinary = binaryString:gsub("_", "")
+            local decimalValue = toNumberFunction(cleanBinary, 2)
+            return decimalValue and toStringFunction(decimalValue) or "0"
+        end )
+        rawCode = rawCode:gsub( "0[xX]([%x_]+)", function(hexString)
+            local cleanHex = hexString:gsub("_", "")
+            return "0x" .. cleanHex
+        end )
+        while rawCode:match("%d_+%d") do
+            rawCode = rawCode:gsub("(%d)_+(%d)", "%1%2")
         end
-        local V = {{"+=", "+"}, {"-=", "-"}, {"*=", "*"}, {"/=", "/"}, {"%%=", "%%"}, {"%^=", "^"}, {"%.%.=", ".."}}
-        for W, X in ipairs(V) do
-            local Y, Z = X[1], X[2]
-            R =
-                R:gsub(
-                "([%a_][%w_]*)%s*" .. Y,
-                function(_)
-                    return _ .. " = " .. _ .. " " .. Z .. " "
-                end
-            )
-            R =
-                R:gsub(
-                "([%a_][%w_]*%.[%a_][%w_%.]+)%s*" .. Y,
-                function(_)
-                    return _ .. " = " .. _ .. " " .. Z .. " "
-                end
-            )
-            R =
-                R:gsub(
-                "([%a_][%w_]*%b[])%s*" .. Y,
-                function(_)
-                    return _ .. " = " .. _ .. " " .. Z .. " "
-                end
-            )
+        local operators = {{"+=", "+"}, {"-=", "-"}, {"*=", "*"}, {"/=", "/"}, {"%%=", "%%"}, {"%^=", "^"}, {"%.%.=", ".."}}
+        for _, opPair in ipairsFunction(operators) do
+            local operatorAssignment, operator = opPair[1], opPair[2]
+            rawCode = rawCode:gsub( "([%a_][%w_]*%b[])%s*" .. operatorAssignment, function(varName)
+                return varName .. " = " .. varName .. " " .. operator .. " "
+            end )
+            rawCode = rawCode:gsub( "([%a_][%w_]*[%.%a_%d][%w_%.]*%.[%a_][%w_]*)%s*" .. operatorAssignment, function(varName)
+                return varName .. " = " .. varName .. " " .. operator .. " "
+            end )
+            rawCode = rawCode:gsub( "([^%w_%.%]%):])([%a_][%w_]*)%s*" .. operatorAssignment, function(prefix, varName)
+                return prefix .. varName .. " = " .. varName .. " " .. operator .. " "
+            end )
+            rawCode = rawCode:gsub( "^([%a_][%w_]*)%s*" .. operatorAssignment, function(varName)
+                return varName .. " = " .. varName .. " " .. operator .. " "
+            end )
         end
-        R = R:gsub("([^%w_])continue([^%w_])", "%1_G.LuraphContinue()%2")
-        R = R:gsub("^continue([^%w_])", "_G.LuraphContinue()%1")
-        R = R:gsub("([^%w_])continue$", "%1_G.LuraphContinue()")
-        return R
+
+        rawCode = rawCode:gsub("([%a_][%w_]*%b[])%s*%+%+",            "%1 = %1 + 1")
+        rawCode = rawCode:gsub("([%a_][%w_]*%.[%w_%.]*[%w_])%s*%+%+","%1 = %1 + 1")
+        rawCode = rawCode:gsub("([%a_][%w_]*)%s*%+%+",                "%1 = %1 + 1")
+        rawCode = rawCode:gsub("%+%+%s*([%a_][%w_]*%b[])",            "%1 = %1 + 1")
+        rawCode = rawCode:gsub("%+%+%s*([%a_][%w_]*%.[%w_%.]*[%w_])","%1 = %1 + 1")
+        rawCode = rawCode:gsub("%+%+%s*([%a_][%w_]*)",                "%1 = %1 + 1")
+        rawCode = rawCode:gsub("%+%+", "+")
+
+        rawCode = rawCode:gsub("([^%w_])continue([^%w_])", "%1__LC__()%2")
+        rawCode = rawCode:gsub("^continue([^%w_])", "__LC__()%1")
+        rawCode = rawCode:gsub("([^%w_])continue$", "%1__LC__()")
+        return rawCode
     end
-    local function a0(a1)
-        local a2 = 0
-        while a1 <= M and J:byte(a1) == 61 do
-            a2 = a2 + 1
-            a1 = a1 + 1
+    local function getBracketCount(index)
+        local count = 0
+        while index <= totalLength and inputString:byte(index) == 61 do
+            count = count + 1
+            index = index + 1
         end
-        return a2, a1
+        return count, index
     end
-    local function a3(a4, a5)
-        local a6 = "]" .. string.rep("=", a5) .. "]"
-        local a7, a8 = J:find(a6, a4, true)
-        return a8 or M
+    local function findClosingBracket(startIndex, bracketCount)
+        local closingPattern = "]" .. string.rep("=", bracketCount) .. "]"
+        local start, finish = inputString:find(closingPattern, startIndex, true)
+        return finish or totalLength
     end
-    local a9 = 1
-    while L <= M do
-        local aa = J:byte(L)
-        if aa == 91 then
-            local a5, ab = a0(L + 1)
-            if ab <= M and J:byte(ab) == 91 then
-                table.insert(K, Q(J:sub(a9, L - 1)))
-                local ac = L
-                local ad = a3(ab + 1, a5)
-                table.insert(K, J:sub(ac, ad))
-                L = ad
-                a9 = L + 1
+    local segmentStart = 1
+    while currentIndex <= totalLength do
+        local byteValue = inputString:byte(currentIndex)
+        if byteValue == 91 then
+            local bracketCount, nextIndex = getBracketCount(currentIndex + 1)
+            if nextIndex <= totalLength and inputString:byte(nextIndex) == 91 then
+                table.insert(outputParts, parseExpression(inputString:sub(segmentStart, currentIndex - 1)))
+                local startSegment = currentIndex
+                local endSegment = findClosingBracket(nextIndex + 1, bracketCount)
+                table.insert(outputParts, inputString:sub(startSegment, endSegment))
+                currentIndex = endSegment
+                segmentStart = currentIndex + 1
             end
-        elseif aa == 45 and L + 1 <= M and J:byte(L + 1) == 45 then
-            table.insert(K, Q(J:sub(a9, L - 1)))
-            local ae = L
-            if L + 2 <= M and J:byte(L + 2) == 91 then
-                local a5, ab = a0(L + 3)
-                if ab <= M and J:byte(ab) == 91 then
-                    local ad = a3(ab + 1, a5)
-                    table.insert(K, J:sub(ae, ad))
-                    L = ad
-                    a9 = L + 1
-                    L = L + 1
+        elseif byteValue == 45 and currentIndex + 1 <= totalLength and inputString:byte(currentIndex + 1) == 45 then
+            table.insert(outputParts, parseExpression(inputString:sub(segmentStart, currentIndex - 1)))
+            local startSegment = currentIndex
+            if currentIndex + 2 <= totalLength and inputString:byte(currentIndex + 2) == 91 then
+                local bracketCount, nextIndex = getBracketCount(currentIndex + 3)
+                if nextIndex <= totalLength and inputString:byte(nextIndex) == 91 then
+                    local endSegment = findClosingBracket(nextIndex + 1, bracketCount)
+                    table.insert(outputParts, inputString:sub(startSegment, endSegment))
+                    currentIndex = endSegment
+                    segmentStart = currentIndex + 1
+                    currentIndex = currentIndex + 1
                 end
             end
-            local af = J:find("\n", L + 2, true)
-            if af then
-                L = af
+            local lineBreak = inputString:find("\n", currentIndex + 2, true)
+            if lineBreak then
+                currentIndex = lineBreak
             else
-                L = M
+                currentIndex = totalLength
             end
-            table.insert(K, J:sub(ae, L))
-            a9 = L + 1
-        elseif aa == 34 or aa == 39 or aa == 96 then
-            table.insert(K, Q(J:sub(a9, L - 1)))
-            local ag = aa
-            local ac = L
-            L = L + 1
-            while L <= M do
-                local ah = J:byte(L)
-                if ah == 92 then
-                    L = L + 1
-                elseif ah == ag then
+            table.insert(outputParts, inputString:sub(startSegment, currentIndex))
+            segmentStart = currentIndex + 1
+        elseif byteValue == 34 or byteValue == 39 or byteValue == 96 then
+            table.insert(outputParts, parseExpression(inputString:sub(segmentStart, currentIndex - 1)))
+            local quoteType = byteValue
+            local startSegment = currentIndex
+            currentIndex = currentIndex + 1
+            while currentIndex <= totalLength do
+                local charByte = inputString:byte(currentIndex)
+                if charByte == 92 then
+                    currentIndex = currentIndex + 1
+                elseif charByte == quoteType then
                     break
                 end
-                L = L + 1
+                currentIndex = currentIndex + 1
             end
-            local ai = J:sub(ac + 1, L - 1)
-            ai = N(ai)
-            if ag == 96 then
-                table.insert(K, '"' .. ai:gsub('"', '\\\\"') .. '"')
+            local extractedContent = inputString:sub(startSegment + 1, currentIndex - 1)
+            extractedContent = cleanEscapes(extractedContent)
+            if quoteType == 96 then
+                table.insert(outputParts, '"' .. extractedContent:gsub('"', '"') .. '"')
             else
-                local aj = string.char(ag)
-                table.insert(K, aj .. ai .. aj)
+                local quoteChar = string.char(quoteType)
+                table.insert(outputParts, quoteChar .. extractedContent .. quoteChar)
             end
-            a9 = L + 1
+            segmentStart = currentIndex + 1
         end
-        L = L + 1
+        currentIndex = currentIndex + 1
     end
-    table.insert(K, Q(J:sub(a9)))
-    return table.concat(K)
+    table.insert(outputParts, parseExpression(inputString:sub(segmentStart)))
+    return table.concat(outputParts)
 end
-local function ak(al, am)
-    local R, an = e(al, am)
-    if R then
-        return R
+local function safeLoad(code, chunkName)
+    local loadedFunc, errorMessage = loadStringFunction(code, chunkName)
+    if loadedFunc then
+        return loadedFunc
     end
-    B("\n[CRITICAL ERROR] Failed to load script!")
-    B("[LUA_LOAD_FAIL] " .. m(an))
-    local ao = tonumber(an:match(":(%d+):"))
-    local ap = an:match("near '([^']+)'")
-    if ap then
-        local a1 = al:find(ap, 1, true)
-        if a1 then
-            local aq = math.max(1, a1 - 50)
-            local ar = math.min(#al, a1 + 50)
-            B("Context around error:")
-            B("..." .. al:sub(aq, ar) .. "...")
+    printFunction("\n[CRITICAL ERROR] Failed to load script!")
+    printFunction("[LUA_LOAD_FAIL] " .. toStringFunction(errorMessage))
+    local errorLine = toNumberFunction(errorMessage:match(":(%d+):"))
+    local errorNear = errorMessage:match("near '([^']+)'")
+    if errorNear then
+        local foundIndex = code:find(errorNear, 1, true)
+        if foundIndex then
+            local startCtx = math.max(1, foundIndex - 50)
+            local endCtx = math.min(#code, foundIndex + 50)
+            printFunction("Context around error:")
+            printFunction("..." .. code:sub(startCtx, endCtx) .. "...")
         end
     end
-    local as = o.open("DEBUG_FAILED_TRANSPILE.lua", "w")
-    if as then
-        as:write(al)
-        as:close()
-        B("[*] Saved to 'DEBUG_FAILED_TRANSPILE.lua' for inspection")
+    local debugFile = ioLibrary.open("DEBUG_FAILED_TRANSPILE.lua", "w")
+    if debugFile then
+        debugFile:write(code)
+        debugFile:close()
+        printFunction("[*] Saved to 'DEBUG_FAILED_TRANSPILE.lua' for inspection")
     end
-    return nil, an
+    return nil, errorMessage
 end
-local function at(O, au)
-    if t.limit_reached then
+local function emitOutput(data, isInline)
+    if dumperState.limit_reached then
         return
     end
-    if O == nil then
+    if data == nil then
         return
     end
-    local av = au and "" or string.rep("    ", t.indent)
-    local aw = av .. m(O)
-    local ax = #aw + 1
-    if t.current_size + ax > r.MAX_OUTPUT_SIZE then
-        t.limit_reached = true
-        local ay = "-- [CRITICAL] Dump stopped: File size exceeded 6MB limit."
-        table.insert(t.output, ay)
-        t.current_size = t.current_size + #ay
-        error("DUMP_LIMIT_EXCEEDED")
+    local indentPrefix = isInline and "" or string.rep("    ", dumperState.indent)
+    local lineString = indentPrefix .. toStringFunction(data)
+    local lineSize = #lineString + 1
+    if dumperState.current_size + lineSize > configuration.MAX_OUTPUT_SIZE then
+        dumperState.limit_reached = true
+        local warningMessage = "-- [CRITICAL] Dump stopped: File size exceeded 6MB limit."
+        table.insert(dumperState.output, warningMessage)
+        dumperState.current_size = dumperState.current_size + #warningMessage
+        errorFunction("DUMP_LIMIT_EXCEEDED")
     end
-    if aw == t.last_emitted_line then
-        t.repetition_count = t.repetition_count + 1
-        if t.repetition_count <= r.MAX_REPEATED_LINES then
-            table.insert(t.output, aw)
-            t.current_size = t.current_size + ax
-        elseif t.repetition_count == r.MAX_REPEATED_LINES + 1 then
-            local ay = av .. "-- [Repeated lines suppressed...]"
-            table.insert(t.output, ay)
-            t.current_size = t.current_size + #ay
+    if lineString == dumperState.last_emitted_line then
+        dumperState.repetition_count = dumperState.repetition_count + 1
+        if dumperState.repetition_count <= configuration.MAX_REPEATED_LINES then
+            table.insert(dumperState.output, lineString)
+            dumperState.current_size = dumperState.current_size + lineSize
+        elseif dumperState.repetition_count == configuration.MAX_REPEATED_LINES + 1 then
+            local suppressMessage = indentPrefix .. "-- [Repeated lines suppressed...]"
+            table.insert(dumperState.output, suppressMessage)
+            dumperState.current_size = dumperState.current_size + #suppressMessage
         end
     else
-        t.last_emitted_line = aw
-        t.repetition_count = 0
-        table.insert(t.output, aw)
-        t.current_size = t.current_size + ax
+        dumperState.last_emitted_line = lineString
+        dumperState.repetition_count = 0
+        table.insert(dumperState.output, lineString)
+        dumperState.current_size = dumperState.current_size + lineSize
     end
-    if r.VERBOSE and t.repetition_count <= 1 then
-        B(aw)
+    if configuration.VERBOSE and dumperState.repetition_count <= 1 then
+        printFunction(lineString)
     end
 end
-local function az(O)
-    at("-- " .. m(O or ""))
+local function emitComment(data)
+    emitOutput("-- " .. toStringFunction(data or ""))
 end
-local function aA()
-    t.last_emitted_line = nil
-    table.insert(t.output, "")
+local function addEmptyLine()
+    dumperState.last_emitted_line = nil
+    table.insert(dumperState.output, "")
 end
-local function aB()
-    return table.concat(t.output, "\n")
+local function getFullOutput()
+    return table.concat(dumperState.output, "\n")
 end
-local function aC(aD)
-    local as = o.open(aD or r.OUTPUT_FILE, "w")
-    if as then
-        as:write(aB())
-        as:close()
+local function saveToFile(filePath)
+    local fileHandle = ioLibrary.open(filePath or configuration.OUTPUT_FILE, "w")
+    if fileHandle then
+        fileHandle:write(getFullOutput())
+        fileHandle:close()
         return true
     end
     return false
 end
-local function aE(aF)
-    if aF == nil then
+local function formatValue(value)
+    if value == nil then
         return "nil"
     end
-    if j(aF) == "string" then
-        return aF
+    if typeFunction(value) == "string" then
+        return value
     end
-    if j(aF) == "number" or j(aF) == "boolean" then
-        return m(aF)
+    if typeFunction(value) == "number" or typeFunction(value) == "boolean" then
+        return toStringFunction(value)
     end
-    if j(aF) == "table" then
-        if t.registry[aF] then
-            return t.registry[aF]
+    if typeFunction(value) == "table" then
+        if dumperState.registry[value] then
+            return dumperState.registry[value]
         end
-        if G(aF) then
-            local aG = H(aF)
-            return aG and "proxy_" .. aG or "proxy"
+        if isProxy(value) then
+            local proxyId = getProxyId(value)
+            return proxyId and "proxy_" .. proxyId or "proxy"
         end
     end
-    local y, O = pcall(m, aF)
-    return y and O or "unknown"
+    local success, result = pcallFunction(toStringFunction, value)
+    return success and result or "unknown"
 end
-local function aH(aF)
-    local O = aE(aF)
-    local aI =
-        O:gsub("\\\\", "\\\\\\\\"):gsub('"', '\\\\"'):gsub("\n", "\n"):gsub("\\r", "\\\\r"):gsub("\\t", "\\\\t")
-    return '"' .. aI .. '"'
+local function formatStringLiteral(value)
+    local rawValue = formatValue(value)
+    local escapedValue = rawValue:gsub("", ""):gsub('"', '"'):gsub("\n", "\n"):gsub("\r", "\r"):gsub("\t", "\t")
+    return '"' .. escapedValue .. '"'
 end
-local aJ = {
+local serviceNames = {
     Players = "Players",
     Workspace = "Workspace",
     ReplicatedStorage = "ReplicatedStorage",
@@ -549,6 +491,8 @@ local aJ = {
     RunService = "RunService",
     UserInputService = "UserInputService",
     TweenService = "TweenService",
+    GroupService = "GroupService",
+    AnimationClipProvider = "AnimationClipProvider",
     HttpService = "HttpService",
     MarketplaceService = "MarketplaceService",
     TeleportService = "TeleportService",
@@ -567,305 +511,78 @@ local aJ = {
     MessagingService = "MessagingService",
     TextService = "TextService",
     TextChatService = "TextChatService",
+    NetworkClient = "NetworkClient",
     ContentProvider = "ContentProvider",
     Debris = "Debris",
-    ReplicatedFirst = "ReplicatedFirst",
-    LocalizationService = "LocalizationService",
-    MaterialService = "MaterialService",
-    Selection = "Selection",
-    ScriptContext = "ScriptContext",
-    TestService = "TestService",
-    LogService = "LogService",
-    PluginManager = "PluginManager",
-    ScriptEditorService = "ScriptEditorService",
-    StudioService = "StudioService",
+    MemStorageService = "MemStorageService",
     ChangeHistoryService = "ChangeHistoryService",
-    Mouse = "Mouse",
-    KeyframeSequenceProvider = "KeyframeSequenceProvider",
-    AnimationService = "AnimationService",
-    BadgeService = "BadgeService",
-    VoiceChatService = "VoiceChatService",
-    PrivateMessagingService = "PrivateMessagingService",
-    FriendMessengerService = "FriendMessengerService",
-    NotificationService = "NotificationService",
+    PlayerEmulatorService = "PlayerEmulatorService",
+    StylingService = "StylingService",
+    ScriptContext = "ScriptContext",
+    LocalizationService = "LocalizationService",
     PolicyService = "PolicyService",
-    StatsService = "StatsService",
-    PerformanceService = "PerformanceService",
-    MemoryStoreService = "MemoryStoreService",
-    SocialService = "SocialService",
-    NetworkSettings = "NetworkSettings",
-    TouchEnabledService = "TouchEnabledService",
-    GameSettings = "GameSettings",
-    FocusService = "FocusService",
-    UserGameSettings = "UserGameSettings",
-    UtilityService = "UtilityService",
-    WebService = "WebService",
-    BasePlayerSettings = "BasePlayerSettings",
-    ControllerService = "ControllerService",
-    DragDetectorService = "DragDetectorService",
-    FastFlags = "FastFlags",
-    FlagService = "FlagService",
-    FrameRateManager = "FrameRateManager",
-    GamepadService = "GamepadService",
-    GeometryService = "GeometryService",
-    GestureService = "GestureService",
-    IconService = "IconService",
-    InputService = "InputService",
-    LiveOpsService = "LiveOpsService",
-    MultiModalService = "MultiModalService",
-    NavigationService = "NavigationService",
-    ParticleEmitterService = "ParticleEmitterService",
-    PointsService = "PointsService",
-    PresenceService = "PresenceService",
-    PurchasePromptService = "PurchasePromptService",
-    ReportageService = "ReportageService",
-    ScreenshotService = "ScreenshotService",
-    ScreenShotService = "ScreenShotService",
-    SecureMessagingService = "SecureMessagingService",
-    ServerReplicatorService = "ServerReplicatorService",
-    ShaderService = "ShaderService",
-    SkyboxService = "SkyboxService",
-    SmokeService = "SmokeService",
-    StickerService = "StickerService",
-    StreamableService = "StreamableService",
-    TelemetryService = "TelemetryService",
-    TerrainService = "TerrainService",
-    TestHarnessService = "TestHarnessService",
-    TestServiceLegacy = "TestServiceLegacy",
-    TextureService = "TextureService",
-    ToolService = "ToolService",
-    TutorialService = "TutorialService",
-    UserService = "UserService",
-    ValueService = "ValueService",
-    WeaveService = "WeaveService",
-    WebGLService = "WebGLService",
-    WebRequestService = "WebRequestService",
-    WindowService = "WindowService",
-    VirtualUser = "VirtualUser",
-    AssetService = "AssetService",
+    CaptureService = "CaptureService",
     AnalyticsService = "AnalyticsService",
-    GroupService = "GroupService",
-    FriendsService = "FriendsService",
-    AccountInformationService = "AccountInformationService",
-    AdService = "AdService",
-    AdvancedDraggerService = "AdvancedDraggerService",
-    AssetManagerService = "AssetManagerService",
-    AssetThemeService = "AssetThemeService",
-    AudioAnalyzerService = "AudioAnalyzerService",
-    AudioService = "AudioService",
-    AvatarExportService = "AvatarExportService",
-    AvatarService = "AvatarService",
-    BaseScriptService = "BaseScriptService",
-    BasicSettings = "BasicSettings",
-    BinaryDataService = "BinaryDataService",
-    BodyMoverService = "BodyMoverService",
-    BrowserService = "BrowserService",
-    CSGDictionaryService = "CSGDictionaryService",
-    CSGPersistenceService = "CSGPersistenceService",
-    CSGPolygonService = "CSGPolygonService",
-    CSGService = "CSGService",
-    CSGSurfaceService = "CSGSurfaceService",
-    CSGToolService = "CSGToolService",
-    CSGValidationService = "CSGValidationService",
-    CachingService = "CachingService",
-    CameraScriptService = "CameraScriptService",
-    CameraService = "CameraService",
-    CaptchaService = "CaptchaService",
-    ClickDetectorService = "ClickDetectorService",
-    CloudService = "CloudService",
-    ClusterService = "ClusterService",
-    CommandService = "CommandService",
-    CommerceService = "CommerceService",
-    ConnectorService = "ConnectorService",
-    ConstraintService = "ConstraintService",
-    CraftService = "CraftService",
-    CreatorService = "CreatorService",
-    CrossDataService = "CrossDataService",
-    CuratedContentService = "CuratedContentService",
-    CustomEventService = "CustomEventService",
-    CustomMeshService = "CustomMeshService",
-    DataModel = "DataModel",
-    DialogService = "DialogService",
-    DisplayOrderService = "DisplayOrderService",
-    DistributeService = "DistributeService",
-    EmoteService = "EmoteService",
-    EncoderService = "EncoderService",
-    EngineService = "EngineService",
-    ExperienceInviteService = "ExperienceInviteService",
-    FaceAnimatorService = "FaceAnimatorService",
-    FilePickerService = "FilePickerService",
-    FileService = "FileService",
-    ForceFeedbackService = "ForceFeedbackService",
-    GamepassService = "GamepassService",
-    GearService = "GearService",
-    GravityService = "GravityService",
-    GridService = "GridService",
-    HighlightService = "HighlightService",
-    HomeService = "HomeService",
-    IdentityService = "IdentityService",
-    ImageService = "ImageService",
-    ImportService = "ImportService",
-    InternalService = "InternalService",
-    JobService = "JobService",
-    KeyboardService = "KeyboardService",
-    LMSController = "LMSController",
-    LMSService = "LMSService",
-    LODService = "LODService",
-    LSPersistenceService = "LSPersistenceService",
-    LeaderStatsService = "LeaderStatsService",
-    LensService = "LensService",
-    LevelOfDetailService = "LevelOfDetailService",
-    LibraryService = "LibraryService",
-    LightService = "LightService",
-    LightingService = "LightingService",
-    LocalUserService = "LocalUserService",
-    LoginService = "LoginService",
-    MOdService = "MOdService",
-    MacroService = "MacroService",
-    ManipulationService = "ManipulationService",
-    MapService = "MapService",
-    MatchmakingService = "MatchmakingService",
-    MediaService = "MediaService",
-    MeshService = "MeshService",
-    MessageService = "MessageService",
-    MidScoreService = "MidScoreService",
-    MigrationService = "MigrationService",
-    ModerationService = "ModerationService",
-    ModuleScriptService = "ModuleScriptService",
-    MoveService = "MoveService",
-    MultiplayerService = "MultiplayerService",
-    NameCallService = "NameCallService",
-    NetworkClient = "NetworkClient",
-    NetworkPeer = "NetworkPeer",
-    NetworkServer = "NetworkServer",
-    ObfuscationService = "ObfuscationService",
-    ObjectCacheService = "ObjectCacheService",
-    ObjectService = "ObjectService",
-    OcclusionService = "OcclusionService",
-    PackageService = "PackageService",
-    PageService = "PageService",
-    ParentService = "ParentService",
-    PerfService = "PerfService",
-    PersistenceService = "PersistenceService",
-    PhysicsDebugService = "PhysicsDebugService",
-    PlacementService = "PlacementService",
-    PlatformService = "PlatformService",
-    PlayService = "PlayService",
-    ProceduralMeshService = "ProceduralMeshService",
-    ProfanityService = "ProfanityService",
-    ProgressService = "ProgressService",
-    PromptService = "PromptService",
-    PropertyService = "PropertyService",
-    ProximityService = "ProximityService",
-    PurchaseService = "PurchaseService",
-    QuestService = "QuestService",
-    RaycastService = "RaycastService",
-    RBXAnalyticsService = "RBXAnalyticsService",
-    ReactionService = "ReactionService",
-    RecommendationService = "RecommendationService",
-    RecordingService = "RecordingService",
-    RemoteFunctionService = "RemoteFunctionService",
-    RemoteService = "RemoteService",
-    RenderService = "RenderService",
-    ReplicationService = "ReplicationService",
-    ReportService = "ReportService",
-    ResumeService = "ResumeService",
-    RetailService = "RetailService",
-    RetargetingService = "RetargetingService",
-    RigBuilderService = "RigBuilderService",
-    RigService = "RigService",
-    RobloxPluginService = "RobloxPluginService",
+    EncodingService = "EncodingService",
+    CorePackages = "CorePackages",
     RobloxReplicatedStorage = "RobloxReplicatedStorage",
-    RulesService = "RulesService",
-    SKUManager = "SKUManager",
-    SKUService = "SKUService",
-    SandboxService = "SandboxService",
-    SceneConversionService = "SceneConversionService",
-    SceneService = "SceneService",
-    ScreenshotFeedbackService = "ScreenshotFeedbackService",
-    ScriptService = "ScriptService",
-    SearchService = "SearchService",
-    SeatService = "SeatService",
-    SecurityService = "SecurityService",
-    SensorService = "SensorService",
-    ServerHostService = "ServerHostService",
-    ServerScript = "ServerScript",
-    ServiceContainer = "ServiceContainer",
-    ServiceProvider = "ServiceProvider",
+    RobloxGui = "RobloxGui",
+    AvatarEditorService = "AvatarEditorService",
+    SocialService = "SocialService",
+    VoiceChatService = "VoiceChatService",
+    AdService = "AdService",
+    GeometryService = "GeometryService",
+    AssetService = "AssetService",
+    LocalizationService = "LocalizationService",
+    NotificationService = "NotificationService",
+    ProcessInstancePhysicsService = "ProcessInstancePhysicsService",
+    FriendService = "FriendService",
     SessionService = "SessionService",
-    SettingsService = "SettingsService",
-    SimulationService = "SimulationService",
-    SkeletonService = "SkeletonService",
-    SkinningService = "SkinningService",
-    SocialNetworkingService = "SocialNetworkingService",
-    SoundGroupService = "SoundGroupService",
-    SpawnLocationService = "SpawnLocationService",
-    SpatialService = "SpatialService",
-    SpringService = "SpringService",
-    SpriteService = "SpriteService",
-    StartupService = "StartupService",
-    StoryService = "StoryService",
-    StreamingService = "StreamingService",
-    StringService = "StringService",
-    StudioAssetService = "StudioAssetService",
-    StudioDataService = "StudioDataService",
-    StudioDeviceService = "StudioDeviceService",
-    StudioGestureService = "StudioGestureService",
-    StudioOnlyService = "StudioOnlyService",
-    StudioPublishService = "StudioPublishService",
-    StudioTestService = "StudioTestService",
-    StyleService = "StyleService",
-    SurfaceService = "SurfaceService",
-    TaskSchedulerService = "TaskSchedulerService",
-    TeamCreateService = "TeamCreateService",
-    TeleportClient = "TeleportClient",
-    TemplateService = "TemplateService",
-    TerrainPhysicsService = "TerrainPhysicsService",
-    TextFilterService = "TextFilterService",
-    TexturePackService = "TexturePackService",
-    ThemeService = "ThemeService",
-    ThirdPartyService = "ThirdPartyService",
-    ThumbnailService = "ThumbnailService",
-    TileService = "TileService",
-    TimeService = "TimeService",
-    ToolboxService = "ToolboxService",
-    TourService = "TourService",
-    TransactionService = "TransactionService",
-    TranslationService = "TranslationService",
-    TweenServiceInternal = "TweenServiceInternal",
-    UIBlurService = "UIBlurService",
-    UIDragService = "UIDragService",
-    UIGradientService = "UIGradientService",
-    UIGridService = "UIGridService",
-    UILayoutService = "UILayoutService",
-    UIListLayoutService = "UIListLayoutService",
-    UIPageLayoutService = "UIPageLayoutService",
-    UIScaleService = "UIScaleService",
-    UIScreenSizeService = "UIScreenSizeService",
-    UIService = "UIService",
-    UIStrokeService = "UIStrokeService",
-    UITableLayoutService = "UITableLayoutService",
-    UITextService = "UITextService",
-    UIViewportService = "UIViewportService",
-    URLService = "URLService",
-    UndoService = "UndoService",
-    UnitScaleService = "UnitScaleService",
-    UniverseService = "UniverseService",
-    UpdateService = "UpdateService",
-    VFXService = "VFXService",
-    VehicleService = "VehicleService",
-    VideoService = "VideoService",
-    ViewportService = "ViewportService",
-    VisibilityService = "VisibilityService",
-    VoiceService = "VoiceService",
-    WaterService = "WaterService",
-    WebServiceInternal = "WebServiceInternal",
-    WebSocketService = "WebSocketService",
-    WelcomeScreenService = "WelcomeScreenService",
-    WorldRootService = "WorldRootService",
-    WrappingService = "WrappingService"
+    TimerService = "TimerService",
+    TouchInputService = "TouchInputService",
+    GamepadService = "GamepadService",
+    KeyboardService = "KeyboardService",
+    MouseService = "MouseService",
+    OmniRecommendationsService = "OmniRecommendationsService",
+    PerformanceService = "PerformanceService",
+    PlatformFriendService = "PlatformFriendService",
+    ReplicatedFirst = "ReplicatedFirst",
+    SpawnLocation = "SpawnLocation",
+    LogService = "LogService",
+    Stats = "Stats",
+    TweenService = "TweenService",
+    Debris = "Debris",
+    CoreGui = "CoreGui",
+    MarketplaceService = "MarketplaceService",
+    NotificationService = "NotificationService",
+    GuidRegistryService = "GuidRegistryService",
+    NetworkServer = "NetworkServer",
+    Geometry = "Geometry",
+    VirtualInputManager = "VirtualInputManager",
+    MLModelDeliveryService = "MLModelDeliveryService",
+    PartyEmulatorService = "PartyEmulatorService",
+    PlatformFriendsService = "PlatformFriendsService",
+    FriendService = "FriendService",
+    OmniRecommendationsService = "OmniRecommendationsService",
+    PerformanceControlService = "PerformanceControlService",
+    RbxAnalyticsService = "RbxAnalyticsService",
+    AbuseReportService = "AbuseReportService",
+    AdService = "AdService",
+    AdPortalService = "AdPortalService",
+    AppUpdateService = "AppUpdateService",
+    BrowserService = "BrowserService",
+    CookiesService = "CookiesService",
+    CoreGui = "CoreGui",
+    GamesService = "GamesService",
+    KeyboardService = "KeyboardService",
+    MarketplaceService = "MarketplaceService",
+    MouseService = "MouseService",
+    NotificationService = "NotificationService",
+    PurchaseDataService = "PurchaseDataService",
+    TimerService = "TimerService",
+    UGCValidationService = "UGCValidationService",
 }
-local aK = {
+local serviceShortcuts = {
     Players = "Players",
     UserInputService = "UIS",
     RunService = "RunService",
@@ -886,315 +603,47 @@ local aK = {
     ContextActionService = "ContextActionService",
     CollectionService = "CollectionService",
     PathfindingService = "PathfindingService",
-    Debris = "Debris",
-    GuiService = "GuiService",
-    VirtualUser = "VirtualUser",
-    VRService = "VRService",
-    PhysicsService = "PhysicsService",
-    AssetService = "AssetService",
-    AnalyticsService = "AnalyticsService",
-    GroupService = "GroupService",
-    FriendsService = "FriendsService",
-    TextService = "TextService",
-    LocalizationService = "LocalizationService",
-    MaterialService = "MaterialService",
-    Selection = "Selection",
-    ScriptContext = "ScriptContext",
-    TestService = "TestService",
-    LogService = "LogService",
-    InsertService = "InsertService",
-    PluginManager = "PluginManager",
-    ScriptEditorService = "ScriptEditorService",
-    RBXAnalyticsService = "RBXAnalyticsService",
-    StudioService = "StudioService",
-    ChangeHistoryService = "ChangeHistoryService",
-    Mouse = "Mouse",
-    KeyframeSequenceProvider = "KeyframeSequenceProvider",
-    AnimationService = "AnimationService",
-    BadgeService = "BadgeService",
-    VoiceChatService = "VoiceChatService",
-    PrivateMessagingService = "PrivateMessagingService",
-    FriendMessengerService = "FriendMessengerService",
-    NotificationService = "NotificationService",
-    PolicyService = "PolicyService",
-    StatsService = "StatsService",
-    PerformanceService = "PerformanceService",
-    MemoryStoreService = "MemoryStoreService",
-    ServerStorage = "ServerStorage",
-    ServerScriptService = "ServerScriptService",
-    StarterPack = "StarterPack",
-    StarterPlayer = "StarterPlayer",
-    ReplicatedFirst = "ReplicatedFirst",
-    SocialService = "SocialService",
-    NetworkSettings = "NetworkSettings",
-    TouchEnabledService = "TouchEnabledService",
-    GameSettings = "GameSettings",
-    FocusService = "FocusService",
-    UserGameSettings = "UserGameSettings",
-    UtilityService = "UtilityService",
-    WebService = "WebService",
-    ContentProvider = "ContentProvider",
-    BasePlayerSettings = "BasePlayerSettings",
-    ControllerService = "ControllerService",
-    DragDetectorService = "DragDetectorService",
-    FastFlags = "FastFlags",
-    FlagService = "FlagService",
-    FrameRateManager = "FrameRateManager",
-    GamepadService = "GamepadService",
-    GeometryService = "GeometryService",
-    GestureService = "GestureService",
-    HapticService = "HapticService",
-    IconService = "IconService",
-    InputService = "InputService",
-    LiveOpsService = "LiveOpsService",
-    MultiModalService = "MultiModalService",
-    NavigationService = "NavigationService",
-    ParticleEmitterService = "ParticleEmitterService",
-    PointsService = "PointsService",
-    PresenceService = "PresenceService",
-    PurchasePromptService = "PurchasePromptService",
-    ReportageService = "ReportageService",
-    ScreenshotService = "ScreenshotService",
-    ScreenShotService = "ScreenShotService",
-    SecureMessagingService = "SecureMessagingService",
-    ServerReplicatorService = "ServerReplicatorService",
-    ShaderService = "ShaderService",
-    SkyboxService = "SkyboxService",
-    SmokeService = "SmokeService",
-    StickerService = "StickerService",
-    StreamableService = "StreamableService",
-    TelemetryService = "TelemetryService",
-    TerrainService = "TerrainService",
-    TestHarnessService = "TestHarnessService",
-    TestServiceLegacy = "TestServiceLegacy",
-    TextureService = "TextureService",
-    ToolService = "ToolService",
-    TutorialService = "TutorialService",
-    UserService = "UserService",
-    ValueService = "ValueService",
-    WeaveService = "WeaveService",
-    WebGLService = "WebGLService",
-    WebRequestService = "WebRequestService",
-    WindowService = "WindowService",
-    AccountInformationService = "AccountInformationService",
-    AdService = "AdService",
-    AdvancedDraggerService = "AdvancedDraggerService",
-    AssetManagerService = "AssetManagerService",
-    AssetThemeService = "AssetThemeService",
-    AudioAnalyzerService = "AudioAnalyzerService",
-    AudioService = "AudioService",
-    AvatarExportService = "AvatarExportService",
-    AvatarService = "AvatarService",
-    BaseScriptService = "BaseScriptService",
-    BasicSettings = "BasicSettings",
-    BinaryDataService = "BinaryDataService",
-    BodyMoverService = "BodyMoverService",
-    BrowserService = "BrowserService",
-    CSGDictionaryService = "CSGDictionaryService",
-    CSGPersistenceService = "CSGPersistenceService",
-    CSGPolygonService = "CSGPolygonService",
-    CSGService = "CSGService",
-    CSGSurfaceService = "CSGSurfaceService",
-    CSGToolService = "CSGToolService",
-    CSGValidationService = "CSGValidationService",
-    CachingService = "CachingService",
-    CameraScriptService = "CameraScriptService",
-    CameraService = "CameraService",
-    CaptchaService = "CaptchaService",
-    ClickDetectorService = "ClickDetectorService",
-    CloudService = "CloudService",
-    ClusterService = "ClusterService",
-    CommandService = "CommandService",
-    CommerceService = "CommerceService",
-    ConnectorService = "ConnectorService",
-    ConstraintService = "ConstraintService",
-    CraftService = "CraftService",
-    CreatorService = "CreatorService",
-    CrossDataService = "CrossDataService",
-    CuratedContentService = "CuratedContentService",
-    CustomEventService = "CustomEventService",
-    CustomMeshService = "CustomMeshService",
-    DataModel = "DataModel",
-    DialogService = "DialogService",
-    DisplayOrderService = "DisplayOrderService",
-    DistributeService = "DistributeService",
-    EmoteService = "EmoteService",
-    EncoderService = "EncoderService",
-    EngineService = "EngineService",
-    ExperienceInviteService = "ExperienceInviteService",
-    FaceAnimatorService = "FaceAnimatorService",
-    FilePickerService = "FilePickerService",
-    FileService = "FileService",
-    ForceFeedbackService = "ForceFeedbackService",
-    GamepassService = "GamepassService",
-    GearService = "GearService",
-    GravityService = "GravityService",
-    GridService = "GridService",
-    HighlightService = "HighlightService",
-    HomeService = "HomeService",
-    IdentityService = "IdentityService",
-    ImageService = "ImageService",
-    ImportService = "ImportService",
-    InternalService = "InternalService",
-    JobService = "JobService",
-    KeyboardService = "KeyboardService",
-    LMSController = "LMSController",
-    LMSService = "LMSService",
-    LODService = "LODService",
-    LSPersistenceService = "LSPersistenceService",
-    LeaderStatsService = "LeaderStatsService",
-    LensService = "LensService",
-    LevelOfDetailService = "LevelOfDetailService",
-    LibraryService = "LibraryService",
-    LightService = "LightService",
-    LightingService = "LightingService",
-    LocalUserService = "LocalUserService",
-    LoginService = "LoginService",
-    MOdService = "MOdService",
-    MacroService = "MacroService",
-    ManipulationService = "ManipulationService",
-    MapService = "MapService",
-    MatchmakingService = "MatchmakingService",
-    MediaService = "MediaService",
-    MeshService = "MeshService",
-    MessageService = "MessageService",
-    MidScoreService = "MidScoreService",
-    MigrationService = "MigrationService",
-    ModerationService = "ModerationService",
-    ModuleScriptService = "ModuleScriptService",
-    MoveService = "MoveService",
-    MultiplayerService = "MultiplayerService",
-    NameCallService = "NameCallService",
-    NetworkClient = "NetworkClient",
-    NetworkPeer = "NetworkPeer",
-    NetworkServer = "NetworkServer",
-    ObfuscationService = "ObfuscationService",
-    ObjectCacheService = "ObjectCacheService",
-    ObjectService = "ObjectService",
-    OcclusionService = "OcclusionService",
-    PackageService = "PackageService",
-    PageService = "PageService",
-    ParentService = "ParentService",
-    PerfService = "PerfService",
-    PersistenceService = "PersistenceService",
-    PhysicsDebugService = "PhysicsDebugService",
-    PlacementService = "PlacementService",
-    PlatformService = "PlatformService",
-    PlayService = "PlayService",
-    ProceduralMeshService = "ProceduralMeshService",
-    ProfanityService = "ProfanityService",
-    ProgressService = "ProgressService",
-    PromptService = "PromptService",
-    PropertyService = "PropertyService",
-    ProximityService = "ProximityService",
-    PurchaseService = "PurchaseService",
-    QuestService = "QuestService",
-    RaycastService = "RaycastService",
-    ReactionService = "ReactionService",
-    RecommendationService = "RecommendationService",
-    RecordingService = "RecordingService",
-    RemoteFunctionService = "RemoteFunctionService",
-    RemoteService = "RemoteService",
-    RenderService = "RenderService",
-    ReplicationService = "ReplicationService",
-    ReportService = "ReportService",
-    ResumeService = "ResumeService",
-    RetailService = "RetailService",
-    RetargetingService = "RetargetingService",
-    RigBuilderService = "RigBuilderService",
-    RigService = "RigService",
-    RobloxPluginService = "RobloxPluginService",
-    RobloxReplicatedStorage = "RobloxReplicatedStorage",
-    RulesService = "RulesService",
-    SKUManager = "SKUManager",
-    SKUService = "SKUService",
-    SandboxService = "SandboxService",
-    SceneConversionService = "SceneConversionService",
-    SceneService = "SceneService",
-    ScreenshotFeedbackService = "ScreenshotFeedbackService",
-    ScriptService = "ScriptService",
-    SearchService = "SearchService",
-    SeatService = "SeatService",
-    SecurityService = "SecurityService",
-    SensorService = "SensorService",
-    ServerHostService = "ServerHostService",
-    ServerScript = "ServerScript",
-    ServiceContainer = "ServiceContainer",
-    ServiceProvider = "ServiceProvider",
-    SessionService = "SessionService",
-    SettingsService = "SettingsService",
-    SimulationService = "SimulationService",
-    SkeletonService = "SkeletonService",
-    SkinningService = "SkinningService",
-    SocialNetworkingService = "SocialNetworkingService",
-    SoundGroupService = "SoundGroupService",
-    SpawnLocationService = "SpawnLocationService",
-    SpatialService = "SpatialService",
-    SpringService = "SpringService",
-    SpriteService = "SpriteService",
-    StartupService = "StartupService",
-    StoryService = "StoryService",
-    StreamingService = "StreamingService",
-    StringService = "StringService",
-    StudioAssetService = "StudioAssetService",
-    StudioDataService = "StudioDataService",
-    StudioDeviceService = "StudioDeviceService",
-    StudioGestureService = "StudioGestureService",
-    StudioOnlyService = "StudioOnlyService",
-    StudioPublishService = "StudioPublishService",
-    StudioTestService = "StudioTestService",
-    StyleService = "StyleService",
-    SurfaceService = "SurfaceService",
-    TaskSchedulerService = "TaskSchedulerService",
-    TeamCreateService = "TeamCreateService",
-    TeleportClient = "TeleportClient",
-    TemplateService = "TemplateService",
-    TerrainPhysicsService = "TerrainPhysicsService",
-    TextFilterService = "TextFilterService",
-    TexturePackService = "TexturePackService",
-    ThemeService = "ThemeService",
-    ThirdPartyService = "ThirdPartyService",
-    ThumbnailService = "ThumbnailService",
-    TileService = "TileService",
-    TimeService = "TimeService",
-    ToolboxService = "ToolboxService",
-    TourService = "TourService",
-    TransactionService = "TransactionService",
-    TranslationService = "TranslationService",
-    TweenServiceInternal = "TweenServiceInternal",
-    UIBlurService = "UIBlurService",
-    UIDragService = "UIDragService",
-    UIGradientService = "UIGradientService",
-    UIGridService = "UIGridService",
-    UILayoutService = "UILayoutService",
-    UIListLayoutService = "UIListLayoutService",
-    UIPageLayoutService = "UIPageLayoutService",
-    UIScaleService = "UIScaleService",
-    UIScreenSizeService = "UIScreenSizeService",
-    UIService = "UIService",
-    UIStrokeService = "UIStrokeService",
-    UITableLayoutService = "UITableLayoutService",
-    UITextService = "UITextService",
-    UIViewportService = "UIViewportService",
-    URLService = "URLService",
-    UndoService = "UndoService",
-    UnitScaleService = "UnitScaleService",
-    UniverseService = "UniverseService",
-    UpdateService = "UpdateService",
-    VFXService = "VFXService",
-    VehicleService = "VehicleService",
-    VideoService = "VideoService",
-    ViewportService = "ViewportService",
-    VisibilityService = "VisibilityService",
-    VoiceService = "VoiceService",
-    WaterService = "WaterService",
-    WebServiceInternal = "WebServiceInternal",
-    WebSocketService = "WebSocketService",
-    WelcomeScreenService = "WelcomeScreenService",
-    WorldRootService = "WorldRootService",
-    WrappingService = "WrappingService"
+    Debris = "Debris"
 }
-local aL = {
+local classParents = {
+    DataModel = {"DataModel", "ServiceProvider", "Instance"},
+    Workspace = {"Workspace", "WorldRoot", "Model", "PVInstance", "Instance"},
+    Camera = {"Camera", "Instance"},
+    Players = {"Players", "Instance"},
+    Player = {"Player", "Instance"},
+    PlayerGui = {"PlayerGui", "BasePlayerGui", "Instance"},
+    Backpack = {"Backpack", "Instance"},
+    PlayerScripts = {"PlayerScripts", "Instance"},
+    Folder = {"Folder", "Instance"},
+    Model = {"Model", "PVInstance", "Instance"},
+    Part = {"Part", "BasePart", "PVInstance", "Instance"},
+    BasePart = {"BasePart", "PVInstance", "Instance"},
+    ModuleScript = {"ModuleScript", "LuaSourceContainer", "Instance"},
+    LocalScript = {"LocalScript", "Script", "LuaSourceContainer", "Instance"},
+    Script = {"Script", "LuaSourceContainer", "Instance"},
+    Humanoid = {"Humanoid", "Instance"},
+    SoundService = {"SoundService", "Instance"},
+    Lighting = {"Lighting", "Instance"},
+    HttpService = {"HttpService", "Instance"},
+    TweenService = {"TweenService", "Instance"},
+    RunService = {"RunService", "Instance"},
+    TextService = {"TextService", "Instance"},
+    GuiService = {"GuiService", "Instance"},
+    ContentProvider = {"ContentProvider", "Instance"},
+    CollectionService = {"CollectionService", "Instance"},
+    MemStorageService = {"MemStorageService", "Instance"},
+    NetworkClient = {"NetworkClient", "Instance"},
+    ClientReplicator = {"ClientReplicator", "Instance"},
+}
+local function classIsA(className, targetClass)
+    if className == targetClass then return true end
+    local parents = classParents[className] or {className, "Instance"}
+    for _, parentName in ipairsFunction(parents) do
+        if parentName == targetClass then return true end
+    end
+    return false
+end
+local uiNamingConvention = {
     {pattern = "window", prefix = "Window", counter = "window"},
     {pattern = "tab", prefix = "Tab", counter = "tab"},
     {pattern = "section", prefix = "Section", counter = "section"},
@@ -1213,4312 +662,3865 @@ local aL = {
     {pattern = "bind", prefix = "Bind", counter = "bind"},
     {pattern = "picker", prefix = "Picker", counter = "picker"}
 }
-local aM = {}
-local function aN(aO)
-    aM[aO] = (aM[aO] or 0) + 1
-    return aM[aO]
+local uiCounters = {}
+local function getUiCounter(name)
+    uiCounters[name] = (uiCounters[name] or 0) + 1
+    return uiCounters[name]
 end
-local function aP(aQ, aR, aS)
-    if not aQ then
-        aQ = "var"
+local function resolveVariableName(obj, originalName, hintString)
+    if not obj then
+        obj = "var"
     end
-    local aT = aE(aQ)
-    if aK[aT] then
-        return aK[aT]
+    local formattedName = formatValue(obj)
+    if serviceShortcuts[formattedName] then
+        return serviceShortcuts[formattedName]
     end
-    if aS then
-        local aU = aS:lower()
-        for W, aV in ipairs(aL) do
-            if aU:find(aV.pattern) then
-                local a2 = aN(aV.counter)
-                return a2 == 1 and aV.prefix or aV.prefix .. a2
+    if hintString then
+        local lowerHint = hintString:lower()
+        for _, patternEntry in ipairsFunction(uiNamingConvention) do
+            if lowerHint:find(patternEntry.pattern) then
+                local counter = getUiCounter(patternEntry.counter)
+                return counter == 1 and patternEntry.prefix or patternEntry.prefix .. counter
             end
         end
     end
-    if aT == "LocalPlayer" then
+    if formattedName == "LocalPlayer" then
         return "LocalPlayer"
     end
-    if aT == "Character" then
+    if formattedName == "Character" then
         return "Character"
     end
-    if aT == "Humanoid" then
+    if formattedName == "Humanoid" then
         return "Humanoid"
     end
-    if aT == "HumanoidRootPart" then
+    if formattedName == "HumanoidRootPart" then
         return "HumanoidRootPart"
     end
-    if aT == "Camera" then
+    if formattedName == "Camera" then
         return "Camera"
     end
-    if aT:match("^Enum%.") then
-        return aT
+    if formattedName:match("^Enum%.") then
+        return formattedName
     end
-    local T = aT:gsub("[^%w_]", '"'):gsub("^%d+", '"')
-    if T == '"' or T == "Object" or T == "Value" or T == "result" then
-        T = "var"
+    local sanitizedName = formattedName:gsub("[^%w_]", '"'):gsub("^%d+", '"')
+    if sanitizedName == '"' or sanitizedName == "Object" or sanitizedName == "Value" or sanitizedName == "result" then
+        sanitizedName = "var"
     end
-    return T
+    return sanitizedName
 end
-local function aW(x, aQ, aX, aS)
-    local aY = t.registry[x]
-    if aY and aY:match("^lar%d+$") then
-        return aY
+local function registerVariable(obj, objName, varType, hintString)
+    local existing = dumperState.registry[obj]
+    if existing and existing:match("^v%d+$") then
+        return existing
     end
-    t.lar_counter = (t.lar_counter or 0) + 1
-    local am = "Var" .. t.lar_counter
-    t.names_used[am] = true
-    t.registry[x] = am
-    t.reverse_registry[am] = x
-    t.variable_types[am] = aX or j(x)
-    return am
+    dumperState.ls_counter = (dumperState.ls_counter or 0) + 1
+    local newName = "v" .. dumperState.ls_counter
+    dumperState.names_used[newName] = true
+    dumperState.registry[obj] = newName
+    dumperState.reverse_registry[newName] = obj
+    dumperState.variable_types[newName] = varType or typeFunction(obj)
+    return newName
 end
-local function aZ(aF, a_, b0, b1)
-    a_ = a_ or 0
-    b0 = b0 or {}
-    if a_ > r.MAX_DEPTH then
+local function serializeValue(obj, depth, visited, allowInline)
+    depth = depth or 0
+    visited = visited or {}
+    if depth > configuration.MAX_DEPTH then
         return "{ --[[max depth]] }"
     end
-    local b2 = j(aF)
-    if w(aF) then
-        local b3 = rawget(aF, "__value")
-        return m(b3 or 0)
+    local valueType = typeFunction(obj)
+    if isProxyTable(obj) then
+        local proxyValue = rawget(obj, "__value")
+        return toStringFunction(proxyValue or 0)
     end
-    if b2 == "table" and t.registry[aF] then
-        return t.registry[aF]
+    if valueType == "table" and dumperState.registry[obj] then
+        return dumperState.registry[obj]
     end
-    if b2 == "nil" then
+    if valueType == "nil" then
         return "nil"
-    elseif b2 == "string" then
-        if #aF > 100 and aF:match("^[A-Za-z0-9+/=]+$") then
-            table.insert(t.string_refs, {value = aF:sub(1, 50) .. "...", hint = "base64", full_length = #aF})
-        elseif aF:match("https?://") then
-            table.insert(t.string_refs, {value = aF, hint = "URL"})
-        elseif aF:match("rbxasset://") or aF:match("rbxassetid://") then
-            table.insert(t.string_refs, {value = aF, hint = "Asset"})
+    elseif valueType == "string" then
+        if #obj > 100 and obj:match("^[A-Za-z0-9+/=]+$") then
+            table.insert(dumperState.string_refs, {value = obj:sub(1, 50) .. "...", hint = "base64", full_length = #obj})
+        elseif obj:match("https?://") then
+            table.insert(dumperState.string_refs, {value = obj, hint = "URL"})
+        elseif obj:match("rbxasset://") or obj:match("rbxassetid://") then
+            table.insert(dumperState.string_refs, {value = obj, hint = "Asset"})
         end
-        return aH(aF)
-    elseif b2 == "number" then
-        if aF ~= aF then
+        return formatStringLiteral(obj)
+    elseif valueType == "number" then
+        if obj ~= obj then
             return "0/0"
         end
-        if aF == math.huge then
+        if obj == math.huge then
             return "math.huge"
         end
-        if aF == -math.huge then
+        if obj == -math.huge then
             return "-math.huge"
         end
-        if aF == math.floor(aF) then
-            return m(math.floor(aF))
+        if obj == math.floor(obj) then
+            return toStringFunction(math.floor(obj))
         end
-        return string.format("%.6g", aF)
-    elseif b2 == "boolean" then
-        return m(aF)
-    elseif b2 == "function" then
-        if t.registry[aF] then
-            return t.registry[aF]
+        return string.format("%.6g", obj)
+    elseif valueType == "boolean" then
+        return toStringFunction(obj)
+    elseif valueType == "function" then
+        if dumperState.registry[obj] then
+            return dumperState.registry[obj]
         end
         return "function() end"
-    elseif b2 == "table" then
-        if G(aF) then
-            return t.registry[aF] or "proxy"
+    elseif valueType == "table" then
+        if isProxy(obj) then
+            return dumperState.registry[obj] or "proxy"
         end
-        if b0[aF] then
+        if visited[obj] then
             return "{ --[[circular]] }"
         end
-        b0[aF] = true
-        local a2 = 0
-        for b4, b5 in D(aF) do
-            if b4 ~= F and b4 ~= "__proxy_id" then
-                a2 = a2 + 1
+        visited[obj] = true
+        local count = 0
+        for k, v in pairsFunction(obj) do
+            if k ~= proxyList and k ~= "__proxy_id" then
+                count = count + 1
             end
         end
-        if a2 == 0 then
+        if count == 0 then
             return "{}"
         end
-        local b6 = true
-        local b7 = 0
-        for b4, b5 in D(aF) do
-            if b4 ~= F and b4 ~= "__proxy_id" then
-                if j(b4) ~= "number" or b4 < 1 or b4 ~= math.floor(b4) then
-                    b6 = false
+        local isSequence = true
+        local maxIdx = 0
+        for k, v in pairsFunction(obj) do
+            if k ~= proxyList and k ~= "__proxy_id" then
+                if typeFunction(k) ~= "number" or k < 1 or k ~= math.floor(k) then
+                    isSequence = false
                     break
                 else
-                    b7 = math.max(b7, b4)
+                    maxIdx = math.max(maxIdx, k)
                 end
             end
         end
-        b6 = b6 and b7 == a2
-        if b6 and a2 <= 5 and b1 ~= false then
-            local b8 = {}
-            for L = 1, a2 do
-                local b5 = aF[L]
-                if j(b5) ~= "table" or G(b5) then
-                    table.insert(b8, aZ(b5, a_ + 1, b0, true))
+        isSequence = isSequence and maxIdx == count
+        if isSequence and count <= 5 and allowInline ~= false then
+            local items = {}
+            for i = 1, count do
+                local val = obj[i]
+                if typeFunction(val) ~= "table" or isProxy(val) then
+                    table.insert(items, serializeValue(val, depth + 1, visited, true))
                 else
-                    b6 = false
+                    isSequence = false
                     break
                 end
             end
-            if b6 and #b8 == a2 then
-                return "{" .. table.concat(b8, ", ") .. "}"
+            if isSequence and #items == count then
+                return "{" .. table.concat(items, ", ") .. "}"
             end
         end
-        local b9 = {}
-        local ba = 0
-        local bb = string.rep("    ", t.indent + a_ + 1)
-        local bc = string.rep("    ", t.indent + a_)
-        for b4, b5 in D(aF) do
-            if b4 ~= F and b4 ~= "__proxy_id" then
-                ba = ba + 1
-                if ba > r.MAX_TABLE_ITEMS then
-                    table.insert(b9, bb .. "-- ..." .. a2 - ba + 1 .. " more")
+        local output = {}
+        local itemCount = 0
+        local indent = string.rep("    ", dumperState.indent + depth + 1)
+        local baseIndent = string.rep("    ", dumperState.indent + depth)
+        for k, v in pairsFunction(obj) do
+            if k ~= proxyList and k ~= "__proxy_id" then
+                itemCount = itemCount + 1
+                if itemCount > configuration.MAX_TABLE_ITEMS then
+                    table.insert(output, indent .. "-- ..." .. count - itemCount + 1 .. " more")
                     break
                 end
-                local bd
-                if b6 then
-                    bd = nil
-                elseif j(b4) == "string" and b4:match("^[%a_][%w_]*$") then
-                    bd = b4
+                local keyStr
+                if isSequence then
+                    keyStr = nil
+                elseif typeFunction(k) == "string" and k:match("^[%a_][%w_]*$") then
+                    keyStr = k
                 else
-                    bd = "[" .. aZ(b4, a_ + 1, b0) .. "]"
+                    keyStr = "[" .. serializeValue(k, depth + 1, visited) .. "]"
                 end
-                local be = aZ(b5, a_ + 1, b0)
-                if bd then
-                    table.insert(b9, bb .. bd .. " = " .. be)
+                local valStr = serializeValue(v, depth + 1, visited)
+                if keyStr then
+                    table.insert(output, indent .. keyStr .. " = " .. valStr)
                 else
-                    table.insert(b9, bb .. be)
+                    table.insert(output, indent .. valStr)
                 end
             end
         end
-        if #b9 == 0 then
+        if #output == 0 then
             return "{}"
         end
-        return "{\n" .. table.concat(b9, ",\n") .. "\n" .. bc .. "}"
-    elseif b2 == "userdata" then
-        if t.registry[aF] then
-            return t.registry[aF]
+        return "{\n" .. table.concat(output, ",\n") .. "\n" .. baseIndent .. "}"
+    elseif valueType == "userdata" then
+        if dumperState.registry[obj] then
+            return dumperState.registry[obj]
         end
-        local y, O = pcall(m, aF)
-        return y and O or "userdata"
-    elseif b2 == "thread" then
+        local success, result = pcallFunction(toStringFunction, obj)
+        return success and result or "userdata"
+    elseif valueType == "thread" then
         return "coroutine.create(function() end)"
     else
-        local y, O = pcall(m, aF)
-        return y and O or "nil"
+        local success, result = pcallFunction(toStringFunction, obj)
+        return success and result or "nil"
     end
 end
-local bf = {}
-setmetatable(bf, {__mode = "k"})
-local function bg()
-    local bh = {}
-    bf[bh] = true
-    local bi = {}
-    setmetatable(bh, bi)
-    return bh, bi
+local proxyStore = {}
+setmetatable(proxyStore, {__mode = "k"})
+local function createProxy()
+    local proxy = {}
+    proxyStore[proxy] = true
+    local meta = {}
+    setmetatable(proxy, meta)
+    return proxy, meta
 end
-local function G(x)
-    return bf[x] == true
+local function isProxy(obj)
+    return proxyStore[obj] == true
 end
-local bj
-local bk
-local function bl(bm)
-    local bh, bi = bg()
-    rawset(bh, v, true)
-    rawset(bh, "__value", bm)
-    t.registry[bh] = tostring(bm)
-    bi.__tostring = function()
-        return tostring(bm)
-    end
-    bi.__index = function(b2, b4)
-        if b4 == F or b4 == "__proxy_id" or b4 == v or b4 == "__value" then
-            return rawget(b2, b4)
+local createProxyObject
+local createProxyMethod
+-- ContentId type for AT6 (SurfaceAppearance.ColorMap etc)
+local function _makeContentId(val)
+    val = val or ""
+    return setmetatable({_value = val}, {
+        __typeof = "ContentId",
+        __tostring = function() return val end,
+        __eq = function(a, b)
+            local av = typeFunction(a) == "table" and rawget(a, "_value") or a
+            local bv = typeFunction(b) == "table" and rawget(b, "_value") or b
+            return av == bv
+        end,
+        __index = function(t, k) if k == "_value" then return val end end,
+    })
+end
+local _makeVector3
+local _makeCFrame
+local function createProxyInstance(bm)
+    local proxy, meta = createProxy()
+    rawset(proxy, proxyMarker, true)
+    rawset(proxy, "__value", bm)
+    dumperState.registry[proxy] = toStringFunction(bm)
+    meta.__tostring = function() return toStringFunction(bm) end
+    meta.__index = function(tbl, key)
+        if key == proxyList or key == "__proxy_id" or key == proxyMarker or key == "__value" then
+            return rawget(tbl, key)
         end
-        return bl(0)
+        return createProxyInstance(0)
     end
-    bi.__newindex = function()
-    end
-    bi.__call = function()
-        return bm
-    end
-    local function bn(X)
-        return function(bo, aa)
-            local bp = type(bo) == "table" and rawget(bo, "__value") or bo or 0
-            local bq = type(aa) == "table" and rawget(aa, "__value") or aa or 0
-            local z
-            if X == "+" then
-                z = bp + bq
-            elseif X == "-" then
-                z = bp - bq
-            elseif X == "*" then
-                z = bp * bq
-            elseif X == "/" then
-                z = bq ~= 0 and bp / bq or 0
-            elseif X == "%" then
-                z = bq ~= 0 and bp % bq or 0
-            elseif X == "^" then
-                z = bp ^ bq
-            else
-                z = 0
-            end
-            return bl(z)
+    meta.__newindex = function() end
+    meta.__call = function() return bm end
+    local function op(symbol)
+        return function(a, b)
+            local valA = typeFunction(a) == "table" and rawget(a, "__value") or a or 0
+            local valB = typeFunction(b) == "table" and rawget(b, "__value") or b or 0
+            local res
+            if symbol == "+" then res = valA + valB
+            elseif symbol == "-" then res = valA - valB
+            elseif symbol == "*" then res = valA * valB
+            elseif symbol == "/" then res = valB ~= 0 and valA / valB or 0
+            elseif symbol == "%" then res = valB ~= 0 and valA % valB or 0
+            elseif symbol == "^" then res = valA ^ valB
+            else res = 0 end
+            return createProxyInstance(res)
         end
     end
-    bi.__add = bn("+")
-    bi.__sub = bn("-")
-    bi.__mul = bn("*")
-    bi.__div = bn("/")
-    bi.__mod = bn("%")
-    bi.__pow = bn("^")
-    bi.__unm = function(bo)
-        return bl(-(rawget(bo, "__value") or 0))
+    meta.__add = op("+")
+    meta.__sub = op("-")
+    meta.__mul = op("*")
+    meta.__div = op("/")
+    meta.__mod = op("%")
+    meta.__pow = op("^")
+    meta.__unm = function(a) return createProxyInstance(-(rawget(a, "__value") or 0)) end
+    meta.__eq = function(a, b)
+        local valA = typeFunction(a) == "table" and rawget(a, "__value") or a
+        local valB = typeFunction(b) == "table" and rawget(b, "__value") or b
+        return valA == valB
     end
-    bi.__eq = function(bo, aa)
-        local bp = type(bo) == "table" and rawget(bo, "__value") or bo
-        local bq = type(aa) == "table" and rawget(aa, "__value") or aa
-        return bp == bq
+    meta.__lt = function(a, b)
+        local valA = typeFunction(a) == "table" and rawget(a, "__value") or a
+        local valB = typeFunction(b) == "table" and rawget(b, "__value") or b
+        return valA < valB
     end
-    bi.__lt = function(bo, aa)
-        local bp = type(bo) == "table" and rawget(bo, "__value") or bo
-        local bq = type(aa) == "table" and rawget(aa, "__value") or aa
-        return bp < bq
+    meta.__le = function(a, b)
+        local valA = typeFunction(a) == "table" and rawget(a, "__value") or a
+        local valB = typeFunction(b) == "table" and rawget(b, "__value") or b
+        return valA <= valB
     end
-    bi.__le = function(bo, aa)
-        local bp = type(bo) == "table" and rawget(bo, "__value") or bo
-        local bq = type(aa) == "table" and rawget(aa, "__value") or aa
-        return bp <= bq
-    end
-    bi.__len = function()
-        return 0
-    end
-    return bh
+    meta.__len = function() return 0 end
+    return proxy
 end
-local function br(bs, bt)
-    if j(bs) ~= "function" then
+local function executeFunction(func, args)
+    if typeFunction(func) ~= "function" then
         return {}
     end
-    local a4 = #t.output
-    local bu = t.pending_iterator
-    t.pending_iterator = false
-    xpcall(
-        function()
-            bs(table.unpack(bt or {}))
-        end,
-        function()
-        end
-    )
-    while t.pending_iterator do
-        t.indent = t.indent - 1
-        at("end")
-        t.pending_iterator = false
+    local outputCount = #dumperState.output
+    local previousIteratorState = dumperState.pending_iterator
+    dumperState.pending_iterator = false
+    xpcallFunction( function() func(table.unpack(args or {})) end, function() end )
+    while dumperState.pending_iterator do
+        dumperState.indent = dumperState.indent - 1
+        emitOutput("end")
+        dumperState.pending_iterator = false
     end
-    t.pending_iterator = bu
-    local bv = {}
-    for L = a4 + 1, #t.output do
-        table.insert(bv, t.output[L])
+    dumperState.pending_iterator = previousIteratorState
+    local capturedLines = {}
+    for i = outputCount + 1, #dumperState.output do
+        table.insert(capturedLines, dumperState.output[i])
     end
-    for L = #t.output, a4 + 1, -1 do
-        table.remove(t.output, L)
+    for i = #dumperState.output, outputCount + 1, -1 do
+        table.remove(dumperState.output, i)
     end
-    return bv
+    return capturedLines
 end
-bk = function(aS, bw)
-    local bh, bi = bg()
-    local bx = t.registry[bw] or "object"
-    local by = aE(aS)
-    t.registry[bh] = bx .. "." .. by
-    bi.__call = function(self, bz, ...)
-        local bA
-        if bz == bh or bz == bw or G(bz) then
-            bA = {...}
+createProxyMethod = function(methodName, parentProxy)
+    local proxy, meta = createProxy()
+    rawset(proxy, "__is_method", true)
+    local parentName = dumperState.registry[parentProxy] or "object"
+    local methodSignature = formatValue(methodName)
+    dumperState.registry[proxy] = parentName .. "." .. methodSignature
+    meta.__call = function(self, firstArg, ...)
+        local args
+        if firstArg == proxy or firstArg == parentProxy or isProxy(firstArg) then
+            args = {...}
         else
-            bA = {bz, ...}
+            args = {firstArg, ...}
         end
-        local aU = by:lower()
-        local bB = nil
-        local bC = true
-        for W, aV in ipairs(aL) do
-            if aU:find(aV.pattern) then
-                bB = aV.prefix
+        local lowerMethod = methodSignature:lower()
+        local uiPrefix = nil
+        for _, uiEntry in ipairsFunction(uiNamingConvention) do
+            if lowerMethod:find(uiEntry.pattern) then
+                uiPrefix = uiEntry.prefix
                 break
             end
         end
-        local bD = nil
-        local bE = nil
-        local bF = nil
-        for L, b5 in ipairs(bA) do
-            if j(b5) == "function" then
-                bD = b5
+        local callbackFunc, callbackKey, callbackIndex = nil, nil, nil
+        for i, val in ipairsFunction(args) do
+            if typeFunction(val) == "function" then
+                callbackFunc = val
                 break
-            elseif j(b5) == "table" and not G(b5) then
-                for bG, aF in D(b5) do
-                    local bH = m(bG):lower()
-                    if bH == "callback" and j(aF) == "function" then
-                        bD = aF
-                        bE = bG
-                        bF = L
+            elseif typeFunction(val) == "table" and not isProxy(val) then
+                for k, v in pairsFunction(val) do
+                    local keyStr = toStringFunction(k):lower()
+                    if keyStr == "callback" and typeFunction(v) == "function" then
+                        callbackFunc = v
+                        callbackKey = k
+                        callbackIndex = i
                         break
                     end
                 end
             end
         end
-        local bI = "value"
-        local bt = {}
-        if bD then
-            if aU:match("toggle") then
-                bI = "enabled"
-                bt = {true}
-            elseif aU:match("slider") then
-                bI = "value"
-                bt = {50}
-            elseif aU:match("dropdown") then
-                bI = "selected"
-                bt = {"Option"}
-            elseif aU:match("textbox") or aU:match("input") then
-                bI = "text"
-                bt = {s or "input"}
-            elseif aU:match("keybind") or aU:match("bind") then
-                bI = "key"
-                bt = {bj("Enum.KeyCode.E", false)}
-            elseif aU:match("color") then
-                bI = "color"
-                bt = {Color3.fromRGB(255, 255, 255)}
-            elseif aU:match("button") then
-                bI = "\\"
-                bt = {}
+        local defaultParam, dummyArgs = "value", {}
+        if callbackFunc then
+            if lowerMethod:match("toggle") then
+                defaultParam = "enabled"
+                dummyArgs = {true}
+            elseif lowerMethod:match("slider") then
+                defaultParam = "value"
+                dummyArgs = {50}
+            elseif lowerMethod:match("dropdown") then
+                defaultParam = "selected"
+                dummyArgs = {"Option"}
+            elseif lowerMethod:match("textbox") or lowerMethod:match("input") then
+                defaultParam = "text"
+                dummyArgs = {inputKey or "input"}
+            elseif lowerMethod:match("keybind") or lowerMethod:match("bind") then
+                defaultParam = "key"
+                dummyArgs = {createProxyObject("Enum.KeyCode.E", false)}
+            elseif lowerMethod:match("color") then
+                defaultParam = "color"
+                dummyArgs = {Color3.fromRGB(255, 255, 255)}
+            elseif lowerMethod:match("button") then
+                defaultParam = ""
+                dummyArgs = {}
             end
         end
-        local bJ = {}
-        if bD then
-            bJ = br(bD, bt)
+        local callbackLines = {}
+        if callbackFunc then
+            callbackLines = executeFunction(callbackFunc, dummyArgs)
         end
-        local z = bj(bB or by, false, bw)
-        local _ = aW(z, bB or by, nil, by)
-        local bK = {}
-        for L, b5 in ipairs(bA) do
-            if j(b5) == "table" and not G(b5) and L == bF then
-                local b8 = {}
-                for bG, aF in D(b5) do
-                    local bd
-                    if j(bG) == "string" and bG:match("^[%a_][%w_]*$") then
-                        bd = bG
+        local newProxy = createProxyObject(uiPrefix or methodSignature, false, parentProxy)
+        local varName = registerVariable(newProxy, uiPrefix or methodSignature, nil, methodSignature)
+        local argStrings = {}
+        for i, val in ipairsFunction(args) do
+            if typeFunction(val) == "table" and not isProxy(val) and i == callbackIndex then
+                local tableParts = {}
+                for k, v in pairsFunction(val) do
+                    local keyStr
+                    if typeFunction(k) == "string" and k:match("^[%a_][%w_]*$") then
+                        keyStr = k
                     else
-                        bd = "[" .. aZ(bG) .. "]"
+                        keyStr = "[" .. serializeValue(k) .. "]"
                     end
-                    if bG == bE and #bJ > 0 then
-                        local bL = bI ~= '"' and "function(" .. "bI" .. ")" or "function()"
-                        local bb = string.rep("    ", t.indent + 2)
-                        local bM = {}
-                        for W, aw in ipairs(bJ) do
-                            table.insert(bM, bb .. (aw:match("^%s*(.*)$") or aw))
+                    if k == callbackKey and #callbackLines > 0 then
+                        local funcSignature = defaultParam ~= '"' and "function(" .. "bI" .. ")" or "function()"
+                        local indent = string.rep("    ", dumperState.indent + 2)
+                        local funcBody = {}
+                        for _, line in ipairsFunction(callbackLines) do
+                            table.insert(funcBody, indent .. (line:match("^%s*(.*)$") or line))
                         end
-                        local bc = string.rep("    ", t.indent + 1)
-                        table.insert(b8, bd .. " = " .. bL .. "\n" .. table.concat(bM, "\n") .. "\n" .. bc .. "end")
-                    elseif bG == bE then
-                        local bN = bI ~= "\\" and "function(" .. bI .. ") end" or "function() end"
-                        table.insert(b8, bd .. " = " .. bN)
+                        local baseIndent = string.rep("    ", dumperState.indent + 1)
+                        table.insert(tableParts, keyStr .. " = " .. funcSignature .. "\n" .. table.concat(funcBody, "\n") .. "\n" .. baseIndent .. "end")
+                    elseif k == callbackKey then
+                        local funcDef = defaultParam ~= "" and "function(" .. defaultParam .. ") end" or "function() end"
+                        table.insert(tableParts, keyStr .. " = " .. funcDef)
                     else
-                        table.insert(b8, bd .. " = " .. aZ(aF))
+                        table.insert(tableParts, keyStr .. " = " .. serializeValue(v))
                     end
                 end
-                table.insert(
-                    bK,
-                    "{\n" ..
-                        string.rep("    ", t.indent + 1) ..
-                            table.concat(b8, ",\n" .. string.rep("    ", t.indent + 1)) ..
-                                "\n" .. string.rep("    ", t.indent) .. "}"
-                )
-            elseif j(b5) == "function" then
-                if #bJ > 0 then
-                    local bL = bI ~= '"' and "function(" .. bI .. ")" or "function()"
-                    local bb = string.rep("    ", t.indent + 1)
-                    local bM = {}
-                    for W, aw in ipairs(bJ) do
-                        table.insert(bM, bb .. (aw:match("^%s*(.*)$") or aw))
+                table.insert(argStrings, "{\n" .. string.rep("    ", dumperState.indent + 1) .. table.concat(tableParts, ",\n" .. string.rep("    ", dumperState.indent + 1)) .. "\n" .. string.rep("    ", dumperState.indent) .. "}")
+            elseif typeFunction(val) == "function" then
+                if #callbackLines > 0 then
+                    local funcSignature = defaultParam ~= '"' and "function(" .. defaultParam .. ")" or "function()"
+                    local indent = string.rep("    ", dumperState.indent + 1)
+                    local funcBody = {}
+                    for _, line in ipairsFunction(callbackLines) do
+                        table.insert(funcBody, indent .. (line:match("^%s*(.*)$") or line))
                     end
-                    table.insert(
-                        bK,
-                        bL .. "\n" .. table.concat(bM, "\n") .. "\n" .. string.rep("    ", t.indent) .. "end"
-                    )
+                    table.insert(argStrings, funcSignature .. "\n" .. table.concat(funcBody, "\n") .. "\n" .. string.rep("    ", dumperState.indent) .. "end")
                 else
-                    local bN = bI ~= '"' and "function(" .. bI .. ") end" or "function() end"
-                    table.insert(bK, bN)
+                    local funcDef = defaultParam ~= '"' and "function(" .. defaultParam .. ") end" or "function() end"
+                    table.insert(argStrings, funcDef)
                 end
             else
-                table.insert(bK, aZ(b5))
+                table.insert(argStrings, serializeValue(val))
             end
         end
-        at(string.format("local %s = %s:%s(%s)", _, bx, by, table.concat(bK, ", ")))
-        return z
+        emitOutput(string.format("local %s = %s:%s(%s)", varName, parentName, methodSignature, table.concat(argStrings, ", ")))
+        return newProxy
     end
-    bi.__index = function(b2, b4)
-        if b4 == F or b4 == "__proxy_id" then
-            return rawget(b2, b4)
+    meta.__index = function(tbl, key)
+        if key == proxyList or key == "__proxy_id" then
+            return rawget(tbl, key)
         end
-        return bk(b4, bh)
+        return createProxyMethod(key, proxy)
     end
-    bi.__tostring = function()
-        return bx .. ":" .. by
+    meta.__tostring = function() return parentName .. ":" .. methodSignature end
+    meta.__index = function(tbl, key)
+        local chainName = (dumperState.registry[proxy] or methodSignature) .. "." .. tostring(key)
+        local childProxy = createProxyObject(key, false, nil)
+        dumperState.registry[childProxy] = chainName
+        local knownClassNames = {
+            SetBlockedUserIdsRequest = "RemoteEvent",
+            AtomicBinding = "BindableEvent",
+        }
+        if knownClassNames[key] then
+            dumperState.property_store[childProxy] = dumperState.property_store[childProxy] or {}
+            dumperState.property_store[childProxy]["ClassName"] = knownClassNames[key]
+        end
+        return childProxy
     end
-    return bh
-end
-local _script_registry = {}
-local _script_registry_set = {}
-local function _register_script_proxy(x, name)
-    local n = tostring(name or "")
-    if not _script_registry_set[x] then
-        _script_registry_set[x] = true
-        table.insert(_script_registry, x)
-    end
-end
-
-bj = function(aQ, bO, bw)
-    local bh, bi = bg()
-    local aT = aE(aQ)
-    t.property_store[bh] = {}
-    if bO then
-        t.registry[bh] = aT
-        t.names_used[aT] = true
-    elseif bw then
-        t.parent_map[bh] = bw
-        rawset(bh, "__temp_path", (t.registry[bw] or "object") .. "." .. aT)
-    end
-    local bP = {}
-    bP.LogEvent = function(self, eventName, parameters)
-    local bS = t.registry[bh] or "RBXAnalyticsService"
-    at(string.format("%s:LogEvent(%s, %s)", bS, aH(eventName), aZ(parameters or {})))
-    table.insert(t.call_graph, {type = "AnalyticsEvent", name = "LogEvent", eventName = eventName, parameters = parameters})
-    return true
-end
-
-bP.LogCustomEvent = function(self, eventName, eventData)
-    local bS = t.registry[bh] or "RBXAnalyticsService"
-    at(string.format("%s:LogCustomEvent(%s, %s)", bS, aH(eventName), aH(eventData or "")))
-    return true
-end
-
-bP.LogSessionStart = function(self, sessionData)
-    local bS = t.registry[bh] or "RBXAnalyticsService"
-    at(string.format("%s:LogSessionStart(%s)", bS, aZ(sessionData or {})))
-    return true
-end
-
-bP.LogSessionEnd = function(self, sessionData)
-    local bS = t.registry[bh] or "RBXAnalyticsService"
-    at(string.format("%s:LogSessionEnd(%s)", bS, aZ(sessionData or {})))
-    return true
-end
-
-bP.GetAnalyticsData = function(self)
-    local bS = t.registry[bh] or "RBXAnalyticsService"
-    local proxy = bj("AnalyticsData", false)
-    local _ = aW(proxy, "analyticsData")
-    at(string.format("local %s = %s:GetAnalyticsData()", _, bS))
     return proxy
 end
-
-bP.SetUserId = function(self, userId)
-    local bS = t.registry[bh] or "RBXAnalyticsService"
-    at(string.format("%s:SetUserId(%s)", bS, aZ(userId)))
-    return true
-end
-
-bP.SetSessionId = function(self, sessionId)
-    local bS = t.registry[bh] or "RBXAnalyticsService"
-    at(string.format("%s:SetSessionId(%s)", bS, aH(sessionId)))
-    return true
-end
-
-bP.Flush = function(self)
-    local bS = t.registry[bh] or "RBXAnalyticsService"
-    at(string.format("%s:Flush()", bS))
-    return true
-end
-    bP.GetService = function(self, bQ)
-        local bR = aE(bQ)
-        local x = bj(bR, false, bh)
-        local _ = aW(x, bR)
-        local bS = t.registry[bh] or "game"
-        at(string.format("local %s = %s:GetService(%s)", _, bS, aH(bR)))
-        return x
+createProxyObject = function(objName, isGlobal, parentProxy)
+    local proxy, meta = createProxy()
+    local formattedName = formatValue(objName)
+    dumperState.property_store[proxy] = {}
+    if isGlobal then
+        dumperState.registry[proxy] = formattedName
+        dumperState.names_used[formattedName] = true
+    elseif parentProxy then
+        _setParent(proxy, parentProxy)
     end
-    bP.WaitForChild = function(self, bT, bU)
-        local bV = aE(bT)
-        local x = bj(bV, false, bh)
-        local _ = aW(x, bV)
-        local bS = t.registry[bh] or "object"
-        if bU then
-            at(string.format("local %s = %s:WaitForChild(%s, %s)", _, bS, aH(bV), aZ(bU)))
-        else
-            at(string.format("local %s = %s:WaitForChild(%s)", _, bS, aH(bV)))
+    local serviceMethods = {}
+    serviceMethods.GetService = function(self, serviceName)
+        local resolvedName = formatValue(serviceName)
+        -- strip null bytes (anti-tamper trick)
+        resolvedName = string.gsub(resolvedName, "%z", "")
+        if resolvedName == "Workspace" then
+            return workspace
         end
-        return x
-    end
-    bP.FindFirstChild = function(self, bT, bW)
-        local bV = aE(bT)
-        local x = bj(bV, false, bh)
-        local _ = aW(x, bV)
-        local bS = t.registry[bh] or "object"
-        if bW then
-            at(string.format("local %s = %s:FindFirstChild(%s, true)", _, bS, aH(bV)))
-        else
-            at(string.format("local %s = %s:FindFirstChild(%s)", _, bS, aH(bV)))
+        if not serviceNames[resolvedName] or resolvedName == "DebuggerManager" then
+            errorFunction("Service not available", 0)
         end
-        _register_script_proxy(x, bV)
-        return x
-    end
-    bP.FindFirstChildOfClass = function(self, bX)
-        local bY = aE(bX)
-        local x = bj(bY, false, bh)
-        local _ = aW(x, bY)
-        local bS = t.registry[bh] or "object"
-        at(string.format("local %s = %s:FindFirstChildOfClass(%s)", _, bS, aH(bY)))
-        return x
-    end
-    bP.FindFirstChildWhichIsA = function(self, bX)
-        local bY = aE(bX)
-        local x = bj(bY, false, bh)
-        local _ = aW(x, bY)
-        local bS = t.registry[bh] or "object"
-        at(string.format("local %s = %s:FindFirstChildWhichIsA(%s)", _, bS, aH(bY)))
-        return x
-    end
-    bP.FindFirstAncestor = function(self, am)
-        local bZ = aE(am)
-        local x = bj(bZ, false, bh)
-        local _ = aW(x, bZ)
-        local bS = t.registry[bh] or "object"
-        at(string.format("local %s = %s:FindFirstAncestor(%s)", _, bS, aH(bZ)))
-        return x
-    end
-    bP.FindFirstAncestorOfClass = function(self, bX)
-        local bY = aE(bX)
-        local x = bj(bY, false, bh)
-        local _ = aW(x, bY)
-        local bS = t.registry[bh] or "object"
-        at(string.format("local %s = %s:FindFirstAncestorOfClass(%s)", _, bS, aH(bY)))
-        return x
-    end
-    bP.FindFirstAncestorWhichIsA = function(self, bX)
-        local bY = aE(bX)
-        local x = bj(bY, false, bh)
-        local _ = aW(x, bY)
-        local bS = t.registry[bh] or "object"
-        at(string.format("local %s = %s:FindFirstAncestorWhichIsA(%s)", _, bS, aH(bY)))
-        return x
-    end
-    bP.GetChildren = function(self)
-        local bS = t.registry[bh] or "object"
-        local children_list = {}
-        if t.property_store[bh] and t.property_store[bh].Children then
-            children_list = t.property_store[bh].Children
-        end
-        at(string.format("-- %s:GetChildren() returned %d items", bS, #children_list))
-        return children_list
-    end
-    bP.GetDescendants = function(self)
-        local bS = t.registry[bh] or "object"
-        local descendants = {}
-        local function collect(node)
-            if t.property_store[node] and t.property_store[node].Children then
-                for _, child in ipairs(t.property_store[node].Children) do
-                    table.insert(descendants, child)
-                    collect(child)
+        local serviceProxy = _at.svcCache[resolvedName]
+        if not serviceProxy then
+            serviceProxy = createProxyObject(resolvedName, false, self)
+            _at.svcCache[resolvedName] = serviceProxy
+            dumperState.parent_map[serviceProxy] = game
+            dumperState.property_store[serviceProxy] = dumperState.property_store[serviceProxy] or {}
+            dumperState.property_store[serviceProxy].ClassName = resolvedName
+            dumperState.property_store[serviceProxy].Name = resolvedName
+            if resolvedName == "CaptureService" then
+                _at.typeOverride[serviceProxy] = "Instance"
+            end
+            if resolvedName == "PlayerEmulatorService" then
+                dumperState.property_store[serviceProxy].PlayerEmulationEnabled = false
+            end
+            if resolvedName == "CorePackages" or resolvedName == "RobloxReplicatedStorage" or resolvedName == "RobloxGui" then
+                -- infinite deep proxy: any property path always returns a truthy proxy
+                local function _makeDeepProxy(name)
+                    local _dp = {}
+                    setmetatable(_dp, {
+                        __index = function(_, k)
+                            return _makeDeepProxy(name .. "." .. tostring(k))
+                        end,
+                        __tostring = function() return name end,
+                        __call = function(_, ...) return _makeDeepProxy(name .. "()") end,
+                        __len = function() return 0 end,
+                        __newindex = function() end,
+                    })
+                    return _dp
+                end
+                _at.typeOverride[serviceProxy] = "Instance"
+                dumperState.property_store[serviceProxy].__deepProxy = _makeDeepProxy(resolvedName)
+                local _dpMeta = debug and debug.getmetatable and debug.getmetatable(serviceProxy) or getmetatable(serviceProxy)
+                if type(_dpMeta) == "table" then
+                    local _prevDpIdx = _dpMeta.__index
+                    _dpMeta.__index = function(tbl, key)
+                        if key == proxyList or key == "__proxy_id" then return rawget(tbl, key) end
+                        local _dp = dumperState.property_store[serviceProxy] and dumperState.property_store[serviceProxy].__deepProxy
+                        if _dp then
+                            local function _makeDeepProxyInner(n)
+                                local d = {}
+                                setmetatable(d, {
+                                    __index = function(_, k) return _makeDeepProxyInner(n.."."..tostring(k)) end,
+                                    __tostring = function() return n end,
+                                    __call = function(_, ...) return _makeDeepProxyInner(n.."()") end,
+                                    __len = function() return 0 end,
+                                    __newindex = function() end,
+                                })
+                                return d
+                            end
+                            return _makeDeepProxyInner(resolvedName.."."..tostring(key))
+                        end
+                        if type(_prevDpIdx) == "function" then return _prevDpIdx(tbl, key) end
+                        if type(_prevDpIdx) == "table" then return _prevDpIdx[key] end
+                        return nil
+                    end
                 end
             end
         end
-        collect(bh)
-        at(string.format("-- %s:GetDescendants() returned %d items", bS, #descendants))
-        return descendants
+        local varName = registerVariable(serviceProxy, resolvedName)
+        local parentPath = dumperState.registry[self] or "game"
+        emitOutput(string.format("local %s = %s:GetService(%s)", varName, parentPath, formatStringLiteral(resolvedName)))
+        return serviceProxy
     end
-    bP.Clone = function(self)
-        local bS = t.registry[bh] or "object"
-        local x = bj((aT or "object") .. "Clone", false)
-        local _ = aW(x, (aT or "object") .. "Clone")
-        at(string.format("local %s = %s:Clone()", _, bS))
-        return x
-    end
-    bP.Destroy = function(self)
-        local bS = t.registry[bh] or "object"
-        at(string.format("%s:Destroy()", bS))
-    end
-    bP.ClearAllChildren = function(self)
-        local bS = t.registry[bh] or "object"
-        at(string.format("%s:ClearAllChildren()", bS))
-        if t.property_store[bh] and t.property_store[bh].Children then
-            local children_copy = {}
-            for _, child in ipairs(t.property_store[bh].Children) do
-                table.insert(children_copy, child)
-            end
-            for _, child in ipairs(children_copy) do
-                if t.property_store[child] then
-                    t.property_store[child].Parent = nil
-                end
-                t.parent_map[child] = nil
-            end
-            t.property_store[bh].Children = {}
-        end
-    end
-    bP.Connect = function(self, bs)
-        local bS = t.registry[bh] or "signal"
-        local c1 = bj("connection", false)
-        local c2 = aW(c1, "conn")
-        local c3 = bS:match("%.([^%.]+)$") or bS
-        local c4 = {"..."}
-        if c3:match("InputBegan") or c3:match("InputEnded") or c3:match("InputChanged") then
-            c4 = {"input", "gameProcessed"}
-        elseif c3:match("CharacterAdded") or c3:match("CharacterRemoving") then
-            c4 = {"character"}
-        elseif c3:match("PlayerAdded") or c3:match("PlayerRemoving") then
-            c4 = {"player"}
-        elseif c3:match("Touched") or c3:match("TouchEnded") then
-            c4 = {"hit"}
-        elseif c3:match("Heartbeat") or c3:match("RenderStepped") then
-            c4 = {"deltaTime"}
-        elseif c3:match("Stepped") then
-            c4 = {"time", "deltaTime"}
-        elseif c3:match("Changed") or c3:match("GetPropertyChangedSignal") then
-            c4 = {"property"}
-        elseif c3:match("ChildAdded") or c3:match("ChildRemoved") then
-            c4 = {"child"}
-        elseif c3:match("DescendantAdded") or c3:match("DescendantRemoving") then
-            c4 = {"descendant"}
-        elseif c3:match("AncestryChanged") then
-            c4 = {"child", "parent"}
-        elseif c3:match("Died") or c3:match("MouseButton") or c3:match("Activated") then
-            c4 = {}
-        elseif c3:match("FocusLost") then
-            c4 = {"enterPressed", "inputObject"}
-        elseif c3:match("Focused") then
-            c4 = {}
-        elseif c3:match("MouseEnter") or c3:match("MouseLeave") then
-            c4 = {}
-        elseif c3:match("MouseMoved") then
-            c4 = {"x", "y"}
-        elseif c3:match("SelectionGained") or c3:match("SelectionLost") then
-            c4 = {}
-        elseif c3:match("JumpRequest") then
-            c4 = {}
-        elseif c3:match("StateChanged") then
-            c4 = {"oldState", "newState"}
-        elseif c3:match("HealthChanged") then
-            c4 = {"health"}
-        elseif c3:match("Running") then
-            c4 = {"speed"}
-        elseif c3:match("FreeFalling") then
-            c4 = {"isFalling"}
-        elseif c3:match("Climbing") then
-            c4 = {"speed"}
-        elseif c3:match("Seated") then
-            c4 = {"isSeated", "seatPart"}
-        elseif c3:match("MoveToFinished") then
-            c4 = {"reached"}
-        elseif c3:match("OnClientEvent") then
-            c4 = {"..."}
-        elseif c3:match("OnServerEvent") then
-            c4 = {"player", "..."}
-        elseif c3:match("RemoteOnInvokeServer") then
-            c4 = {"player", "..."}
-        elseif c3:match("RemoteOnInvokeClient") then
-            c4 = {"..."}
-        elseif c3:match("PromptButtonHoldBegan") or c3:match("PromptButtonHoldEnded") then
-            c4 = {"player"}
-        elseif c3:match("Triggered") then
-            c4 = {"player"}
-        elseif c3:match("AnimationPlayed") then
-            c4 = {"track"}
-        elseif c3:match("Stopped") then
-            c4 = {}
-        elseif c3:match("KeyframeReached") then
-            c4 = {"keyframeName"}
-        elseif c3:match("MarkerReached") then
-            c4 = {"markerName"}
-        elseif c3:match("Completed") then
-            c4 = {"playbackState"}
-        elseif c3:match("ItemAdded") or c3:match("ItemRemoved") then
-            c4 = {"item"}
-        elseif c3:match("Collision") then
-            c4 = {"part"}
-        elseif c3:match("Chatted") then
-            c4 = {"message"}
-        elseif c3:match("TeamChanged") then
-            c4 = {"team"}
-        end
-        at(string.format("local %s = %s:Connect(function(%s)", c2, bS, table.concat(c4, ", ")))
-        t.indent = t.indent + 1
-        if j(bs) == "function" then
-            xpcall(
-                function()
-                    bs()
-                end,
-                function()
-                end
-            )
-        end
-        while t.pending_iterator do
-            t.indent = t.indent - 1
-            at("end")
-            t.pending_iterator = false
-        end
-        t.indent = t.indent - 1
-        at("end)")
-        return c1
-    end
-    bP.Once = function(self, bs)
-        local bS = t.registry[bh] or "signal"
-        local c1 = bj("connection", false)
-        local c2 = aW(c1, "conn")
-        at(string.format("local %s = %s:Once(function(...)", c2, bS))
-        t.indent = t.indent + 1
-        if j(bs) == "function" then
-            xpcall(
-                function()
-                    bs()
-                end,
-                function()
-                end
-            )
-        end
-        t.indent = t.indent - 1
-        at("end)")
-        return c1
-    end
-    bP.Wait = function(self)
-        local bS = t.registry[bh] or "signal"
-        local z = bj("waitResult", false)
-        local _ = aW(z, "waitResult")
-        at(string.format("local %s = %s:Wait()", _, bS))
-        return z
-    end
-    bP.Disconnect = function(self)
-        local bS = t.registry[bh] or "connection"
-        at(string.format("%s:Disconnect()", bS))
-    end
-    bP.FireServer = function(self, ...)
-        local bS = t.registry[bh] or "remote"
-        local bA = {...}
-        local c5 = {}
-        for W, b5 in ipairs(bA) do
-            table.insert(c5, aZ(b5))
-        end
-        at(string.format("%s:FireServer(%s)", bS, table.concat(c5, ", ")))
-        table.insert(t.call_graph, {type = "RemoteEvent", name = bS, args = bA})
-    end
-    bP.InvokeServer = function(self, ...)
-        local bS = t.registry[bh] or "remote"
-        local bA = {...}
-        local c5 = {}
-        for W, b5 in ipairs(bA) do
-            table.insert(c5, aZ(b5))
-        end
-        local z = bj("invokeResult", false)
-        local _ = aW(z, "result")
-        at(string.format("local %s = %s:InvokeServer(%s)", _, bS, table.concat(c5, ", ")))
-        table.insert(t.call_graph, {type = "RemoteFunction", name = bS, args = bA})
-        return z
-    end
-    bP.Create = function(self, x, c6, c7)
-        local bS = t.registry[bh] or "TweenService"
-        local c8 = bj("tween", false)
-        local _ = aW(c8, "tween")
-        at(string.format("local %s = %s:Create(%s, %s, %s)", _, bS, aZ(x), aZ(c6), aZ(c7)))
-        return c8
-    end
-    bP.Play = function(self)
-        local bS = t.registry[bh] or "tween"
-        at(string.format("%s:Play()", bS))
-        if self._tween_info and self._tween_info._duration then
-            self._start_time = os.clock()
-            self._duration = self._tween_info._duration
-        end
-    end
-    bP.Pause = function(self)
-        local bS = t.registry[bh] or "tween"
-        at(string.format("%s:Pause()", bS))
-    end
-    bP.Cancel = function(self)
-        local bS = t.registry[bh] or "tween"
-        at(string.format("%s:Cancel()", bS))
-    end
-    bP.GetValue = function(self, t, style, direction)
-        if style == "Linear" then
-            return t
-        elseif style == "Quad" then
-            if direction == "In" then
-                return t * t
-            elseif direction == "Out" then
-                return t * (2 - t)
-            else
-                return t < 0.5 and 2 * t * t or -1 + (4 - 2 * t) * t
-            end
-        elseif style == "Sine" then
-            if direction == "In" then
-                return 1 - math.cos(t * math.pi / 2)
-            elseif direction == "Out" then
-                return math.sin(t * math.pi / 2)
-            else
-                return (1 - math.cos(math.pi * t)) / 2
+    serviceMethods.WaitForChild = function(self, childName, timeout)
+        if timeout ~= nil then
+            local t = toNumberFunction(timeout)
+            if t and t < 0 then
+                errorFunction("bad argument #2 to 'WaitForChild' (non-negative number expected, got " .. toStringFunction(t) .. ")", 2)
             end
         end
-        return t
-    end
-    bP._completedSignal = nil
-    bP._getCompletedSignal = function(self)
-        if not self._completedSignal then
-            local sig = bj("RBXScriptSignal", false)
-            self._completedSignal = sig
-            local dur = self._duration or 0.1
-            sig.Wait = function()
-                local st = os.clock()
-                while os.clock() - st < dur do task.wait() end
-                return true
-            end
-            sig.Connect = function(s, cb)
-                task.spawn(function()
-                    if self._duration then task.wait(self._duration) end
-                    if cb then pcall(cb) end
-                end)
-                return {Disconnect = function() end}
-            end
-        end
-        return self._completedSignal
-    end
-    bP.Completed = nil
-    bP.Stop = function(self)
-        local bS = t.registry[bh] or "tween"
-        at(string.format("%s:Stop()", bS))
-    end
-    bP.Raycast = function(self, c9, ca, cb)
-        local bS = t.registry[bh] or "workspace"
-        local z = bj("raycastResult", false)
-        local _ = aW(z, "rayResult")
-        if cb then
-            at(string.format("local %s = %s:Raycast(%s, %s, %s)", _, bS, aZ(c9), aZ(ca), aZ(cb)))
+        local resolvedName = formatValue(childName)
+        local childProxy = createProxyObject(resolvedName, false, self)
+        local varName = registerVariable(childProxy, resolvedName)
+        local parentPath = dumperState.registry[self] or "object"
+        if timeout then
+            emitOutput(string.format("local %s = %s:WaitForChild(%s, %s)", varName, parentPath, formatStringLiteral(resolvedName), serializeValue(timeout)))
         else
-            at(string.format("local %s = %s:Raycast(%s, %s)", _, bS, aZ(c9), aZ(ca)))
+            emitOutput(string.format("local %s = %s:WaitForChild(%s)", varName, parentPath, formatStringLiteral(resolvedName)))
         end
-        return z
+        return childProxy
     end
-    bP.GetMouse = function(self)
-        local bS = t.registry[bh] or "player"
-        local cc = bj("mouse", false)
-        local _ = aW(cc, "mouse")
-        at(string.format("local %s = %s:GetMouse()", _, bS))
-        return cc
-    end
-    bP.Kick = function(self, cd)
-        local bS = t.registry[bh] or "player"
-        if cd then
-            at(string.format("%s:Kick(%s)", bS, aZ(cd)))
+    serviceMethods.FindFirstChild = function(self, childName, recursive)
+        if recursive ~= nil and typeFunction(recursive) ~= "boolean" then
+            errorFunction("bad argument #2 to 'FindFirstChild' (boolean expected, got " .. typeFunction(recursive) .. ")", 2)
+        end
+        local resolvedName = formatValue(childName)
+        for _, child in ipairsFunction(_at.children[self] or {}) do
+            local props = dumperState.property_store[child] or {}
+            if props.Name == resolvedName or dumperState.registry[child] == resolvedName then
+                return child
+            end
+        end
+        if recursive then
+            for _, child in ipairsFunction(_getAllDescendants(self, {})) do
+                local props = dumperState.property_store[child] or {}
+                if props.Name == resolvedName or dumperState.registry[child] == resolvedName then
+                    return child
+                end
+            end
+        end
+        local childProxy = createProxyObject(resolvedName, false, self)
+        local varName = registerVariable(childProxy, resolvedName)
+        local parentPath = dumperState.registry[self] or "object"
+        if recursive then
+            emitOutput(string.format("local %s = %s:FindFirstChild(%s, true)", varName, parentPath, formatStringLiteral(resolvedName)))
         else
-            at(string.format("%s:Kick()", bS))
+            emitOutput(string.format("local %s = %s:FindFirstChild(%s)", varName, parentPath, formatStringLiteral(resolvedName)))
         end
+        return childProxy
     end
-    bP.GetPropertyChangedSignal = function(self, ce)
-        local cf = aE(ce)
-        local bS = t.registry[bh] or "instance"
-        local cg = bj(cf .. "Changed", false)
-        t.registry[cg] = bS .. ":GetPropertyChangedSignal(" .. aH(cf) .. ")"
-        return cg
-    end
-    bP.IsA = function(self, bX)
-        return true
-    end
-    bP.IsDescendantOf = function(self, ch)
-        return true
-    end
-    bP.IsAncestorOf = function(self, ci)
-        return true
-    end
-    bP.GetAttribute = function(self, cj)
-        local bS = t.registry[bh] or "instance"
-        at(string.format("-- %s:GetAttribute(%s)", bS, aH(cj)))
-        if not t.property_store[bh] then
-            t.property_store[bh] = {}
+    serviceMethods.FindFirstChildOfClass = function(self, className)
+        local resolvedName = formatValue(className)
+        for _, child in ipairsFunction(_at.children[self] or {}) do
+            local props = dumperState.property_store[child] or {}
+            local cn = props.ClassName or ""
+            if cn == resolvedName then return child end
         end
-        if not t.property_store[bh].Attributes then
-            t.property_store[bh].Attributes = {}
-        end
-        return t.property_store[bh].Attributes[cj]
+        local newProxy = createProxyObject(resolvedName, false, self)
+        local varName = registerVariable(newProxy, resolvedName)
+        local parentPath = dumperState.registry[self] or "object"
+        emitOutput(string.format("local %s = %s:FindFirstChildOfClass(%s)", varName, parentPath, formatStringLiteral(resolvedName)))
+        return newProxy
     end
-    bP.SetAttribute = function(self, cj, bm)
-        local bS = t.registry[bh] or "instance"
-        if not t.property_store[bh] then
-            t.property_store[bh] = {}
+    local _classInherits = {
+        Part = {"Part","BasePart","PVInstance","Instance"},
+        MeshPart = {"MeshPart","BasePart","PVInstance","Instance"},
+        UnionOperation = {"UnionOperation","BasePart","PVInstance","Instance"},
+        WedgePart = {"WedgePart","BasePart","PVInstance","Instance"},
+        SpecialMesh = {"SpecialMesh","DataModelMesh","Instance"},
+        Humanoid = {"Humanoid","Instance"},
+        LocalScript = {"LocalScript","BaseScript","LuaSourceContainer","Instance"},
+        Script = {"Script","BaseScript","LuaSourceContainer","Instance"},
+        ModuleScript = {"ModuleScript","LuaSourceContainer","Instance"},
+        Folder = {"Folder","Instance"},
+        Model = {"Model","PVInstance","Instance"},
+        Frame = {"Frame","GuiObject","GuiBase2d","Instance"},
+        TextLabel = {"TextLabel","TextBase","GuiObject","GuiBase2d","Instance"},
+        TextButton = {"TextButton","TextBase","GuiButton","GuiObject","GuiBase2d","Instance"},
+        TextBox = {"TextBox","TextBase","GuiObject","GuiBase2d","Instance"},
+        ImageLabel = {"ImageLabel","GuiObject","GuiBase2d","Instance"},
+        ImageButton = {"ImageButton","GuiButton","GuiObject","GuiBase2d","Instance"},
+        ScreenGui = {"ScreenGui","LayerCollector","GuiBase","Instance"},
+        RemoteEvent = {"RemoteEvent","Instance"},
+        RemoteFunction = {"RemoteFunction","Instance"},
+        BindableEvent = {"BindableEvent","Instance"},
+        BindableFunction = {"BindableFunction","Instance"},
+        LocalizationTable = {"LocalizationTable","Instance"},
+        Translator = {"Translator","Instance"},
+    }
+    local function _isA(childClass, targetClass)
+        if childClass == targetClass then return true end
+        local hierarchy = _classInherits[childClass]
+        if hierarchy then
+            for _, base in ipairsFunction(hierarchy) do
+                if base == targetClass then return true end
+            end
         end
-        if not t.property_store[bh].Attributes then
-            t.property_store[bh].Attributes = {}
-        end
-        t.property_store[bh].Attributes[cj] = bm
-        at(string.format("%s:SetAttribute(%s, %s)", bS, aH(cj), aZ(bm)))
+        return false
     end
-    bP.GetAttributes = function(self)
+    serviceMethods.FindFirstChildWhichIsA = function(self, className)
+        local resolvedName = formatValue(className)
+        for _, child in ipairsFunction(_at.children[self] or {}) do
+            local props = dumperState.property_store[child] or {}
+            local cn = props.ClassName or ""
+            if _isA(cn, resolvedName) then return child end
+        end
+        local newProxy = createProxyObject(resolvedName, false, self)
+        local varName = registerVariable(newProxy, resolvedName)
+        local parentPath = dumperState.registry[self] or "object"
+        emitOutput(string.format("local %s = %s:FindFirstChildWhichIsA(%s)", varName, parentPath, formatStringLiteral(resolvedName)))
+        return newProxy
+    end
+    serviceMethods.FindFirstAncestor = function(self, ancestorName)
+        local resolvedName = formatValue(ancestorName)
+        local proxy = createProxyObject(resolvedName, false, proxy)
+        local varName = registerVariable(proxy, resolvedName)
+        local parentPath = dumperState.registry[proxy] or "object"
+        emitOutput(string.format("local %s = %s:FindFirstAncestor(%s)", varName, parentPath, formatStringLiteral(resolvedName)))
+        return proxy
+    end
+    serviceMethods.FindFirstAncestorOfClass = function(self, className)
+        local resolvedName = formatValue(className)
+        local proxy = createProxyObject(resolvedName, false, proxy)
+        local varName = registerVariable(proxy, resolvedName)
+        local parentPath = dumperState.registry[proxy] or "object"
+        emitOutput(string.format("local %s = %s:FindFirstAncestorOfClass(%s)", varName, parentPath, formatStringLiteral(resolvedName)))
+        return proxy
+    end
+    serviceMethods.FindFirstAncestorWhichIsA = function(self, className)
+        local resolvedName = formatValue(className)
+        local proxy = createProxyObject(resolvedName, false, proxy)
+        local varName = registerVariable(proxy, resolvedName)
+        local parentPath = dumperState.registry[proxy] or "object"
+        emitOutput(string.format("local %s = %s:FindFirstAncestorWhichIsA(%s)", varName, parentPath, formatStringLiteral(resolvedName)))
+        return proxy
+    end
+    serviceMethods.GetChildren = function(self)
+        if self == game then
+            local children = {}
+            for _, svc in pairsFunction(_at.svcCache) do
+                children[#children + 1] = svc
+            end
+            return children
+        end
         return {}
     end
-    bP.GetPlayers = function(self)
-        return {}
+    serviceMethods.GetDescendants = function(self)
+        local parentPath = dumperState.registry[proxy] or "object"
+        emitOutput(string.format("for _, obj in %s:GetDescendants() do", parentPath))
+        dumperState.indent = dumperState.indent + 1
+        local descProxy = createProxyObject("obj", false)
+        dumperState.registry[descProxy] = "obj"
+        dumperState.property_store[descProxy] = {Name = "Ball", ClassName = "Part", Size = Vector3.new(1, 1, 1)}
+        local yielded = false
+        return function()
+            if not yielded then
+                yielded = true
+                return 1, descProxy
+            else
+                dumperState.indent = dumperState.indent - 1
+                emitOutput("end")
+                return nil
+            end
+        end, nil, 0
     end
-    bP.GetPlayerFromCharacter = function(self, ck)
-        local bS = t.registry[bh] or "Players"
-        local cl = bj("player", false)
-        local _ = aW(cl, "player")
-        at(string.format("local %s = %s:GetPlayerFromCharacter(%s)", _, bS, aZ(ck)))
-        return cl
+    serviceMethods.Clone = function(self)
+        local props = dumperState.property_store[proxy] or {}
+        if props.Archivable == false then return nil end
+        local parentPath = dumperState.registry[proxy] or "object"
+        local cloneProxy = createProxyObject((formattedName or "object") .. "Clone", false)
+        local varName = registerVariable(cloneProxy, (formattedName or "object") .. "Clone")
+        emitOutput(string.format("local %s = %s:Clone()", varName, parentPath))
+        dumperState.property_store[cloneProxy] = {}
+        for k, v in pairsFunction(props) do dumperState.property_store[cloneProxy][k] = v end
+        return cloneProxy
     end
-    bP.GetPlayerByUserId = function(self, cm)
-        local bS = t.registry[bh] or "Players"
-        local cl = bj("player", false)
-        local _ = aW(cl, "player")
-        at(string.format("local %s = %s:GetPlayerByUserId(%s)", _, bS, aZ(cm)))
-        return cl
+    -- LocalizationTable entry store keyed by proxy
+    if not _at.locEntries then _at.locEntries = {} end
+    serviceMethods.SetEntries = function(self, entries)
+        _at.locEntries[proxy] = entries or {}
     end
-    bP.SetCore = function(self, am, bm)
-        local bS = t.registry[bh] or "StarterGui"
-        at(string.format("%s:SetCore(%s, %s)", bS, aH(am), aZ(bm)))
+    serviceMethods.GetEntries = function(self)
+        return _at.locEntries[proxy] or {}
     end
-    bP.GetCore = function(self, am)
+    serviceMethods.GetEntry = function(self, key)
+        local store = _at.locEntries[proxy] or {}
+        for _, e in ipairs(store) do
+            if e.Key == key then return e end
+        end
         return nil
     end
-    bP.SetCoreGuiEnabled = function(self, cn, co)
-        local bS = t.registry[bh] or "StarterGui"
-        at(string.format("%s:SetCoreGuiEnabled(%s, %s)", bS, aZ(cn), aZ(co)))
+    serviceMethods.RemoveEntry = function(self, key)
+        local store = _at.locEntries[proxy] or {}
+        for i, e in ipairs(store) do
+            if e.Key == key then table.remove(store, i) return end
+        end
     end
-    bP.BindToRenderStep = function(self, am, cp, bs)
-        local bS = t.registry[bh] or "RunService"
-        at(string.format("%s:BindToRenderStep(%s, %s, function(deltaTime)", bS, aH(am), aZ(cp)))
-        t.indent = t.indent + 1
-        if j(bs) == "function" then
-            xpcall(
-                function()
-                    bs(0.016)
-                end,
-                function()
+    serviceMethods.GetTranslator = function(self, locale)
+        local translator = createProxyObject("Translator", false)
+        dumperState.property_store[translator] = {ClassName = "Translator", LocaleId = locale or "en"}
+        return translator
+    end
+    serviceMethods.Destroy = function(self)
+        local parentPath = dumperState.registry[proxy] or "object"
+        -- recursively destroy all descendants first
+        local function destroyRec(p)
+            local kids = _at.children[p] or {}
+            for i = #kids, 1, -1 do
+                local child = kids[i]
+                destroyRec(child)
+                dumperState.parent_map[child] = nil
+                if dumperState.property_store[child] then
+                    dumperState.property_store[child].Parent = nil
                 end
-            )
+            end
+            _at.children[p] = {}
         end
-        t.indent = t.indent - 1
-        at("end)")
-    end
-    bP.UnbindFromRenderStep = function(self, am)
-        local bS = t.registry[bh] or "RunService"
-        at(string.format("%s:UnbindFromRenderStep(%s)", bS, aH(am)))
-    end
-    bP.GetFullName = function(self)
-        return t.registry[bh] or "Instance"
-    end
-    bP.GetDebugId = function(self)
-        return "DEBUG_" .. (H(bh) or "0")
-    end
-    bP.MoveTo = function(self, cq, cr)
-        local bS = t.registry[bh] or "humanoid"
-        if cr then
-            at(string.format("%s:MoveTo(%s, %s)", bS, aZ(cq), aZ(cr)))
-        else
-            at(string.format("%s:MoveTo(%s)", bS, aZ(cq)))
+        destroyRec(proxy)
+        _setParent(proxy, nil)
+        if dumperState.property_store[proxy] then
+            dumperState.property_store[proxy].Parent = nil
         end
+        emitOutput(string.format("%s:Destroy()", parentPath))
     end
-    bP.Move = function(self, ca, cs)
-        local bS = t.registry[bh] or "humanoid"
-        at(string.format("%s:Move(%s, %s)", bS, aZ(ca), aZ(cs or false)))
+    serviceMethods.ApplyAngularImpulse = function(self, impulse)
+        -- store impulse so AssemblyAngularVelocity returns something meaningful
+        dumperState.property_store[proxy] = dumperState.property_store[proxy] or {}
+        dumperState.property_store[proxy]["_angularImpulse"] = impulse
+        local path = dumperState.registry[proxy] or "part"
+        emitOutput(string.format("%s:ApplyAngularImpulse(%s)", path, serializeValue(impulse)))
     end
-    bP.EquipTool = function(self, ct)
-        local bS = t.registry[bh] or "humanoid"
-        at(string.format("%s:EquipTool(%s)", bS, aZ(ct)))
+    serviceMethods.ApplyImpulse = function(self, impulse)
+        local path = dumperState.registry[proxy] or "part"
+        emitOutput(string.format("%s:ApplyImpulse(%s)", path, serializeValue(impulse)))
     end
-    bP.UnequipTools = function(self)
-        local bS = t.registry[bh] or "humanoid"
-        at(string.format("%s:UnequipTools()", bS))
+    serviceMethods.GetPartBoundsInBox = function(self, cf, size, params)
+        -- return all workspace children that aren't in the exclude list
+        local excluded = {}
+        if params and typeFunction(params) == "table" and params.FilterDescendantsInstances then
+            for _, inst in ipairsFunction(params.FilterDescendantsInstances) do
+                excluded[inst] = true
+            end
+        end
+        local results = {}
+        -- walk workspace children from parent_map
+        for child, parent in pairsFunction(dumperState.parent_map) do
+            if parent == workspace and not excluded[child] then
+                table.insert(results, child)
+            end
+        end
+        return results
     end
-    bP.TakeDamage = function(self, cu)
-        local bS = t.registry[bh] or "humanoid"
-        at(string.format("%s:TakeDamage(%s)", bS, aZ(cu)))
+    serviceMethods.GetPartBoundsInRadius = function(self, position, radius, params)
+        return serviceMethods.GetPartBoundsInBox(self, CFrame.new(position), Vector3.new(radius*2,radius*2,radius*2), params)
     end
-    bP.ChangeState = function(self, cv)
-        local bS = t.registry[bh] or "humanoid"
-        at(string.format("%s:ChangeState(%s)", bS, aZ(cv)))
+    serviceMethods.ClearAllChildren = function(self)
+        local parentPath = dumperState.registry[proxy] or "object"
+        local function clearRec(p)
+            local kids = _at.children[p] or {}
+            for i = #kids, 1, -1 do
+                local child = kids[i]
+                clearRec(child)
+                dumperState.parent_map[child] = nil
+                if dumperState.property_store[child] then
+                    dumperState.property_store[child].Parent = nil
+                end
+            end
+            _at.children[p] = {}
+        end
+        clearRec(proxy)
+        emitOutput(string.format("%s:ClearAllChildren()", parentPath))
     end
-    bP.SetStateEnabled = function(self, state, enabled)
-        local bS = t.registry[bh] or "humanoid"
-        at(string.format("%s:SetStateEnabled(%s, %s)", bS, aZ(state), aZ(enabled)))
+    serviceMethods.Connect = function(self, func)
+        local signalPath = dumperState.registry[proxy] or "signal"
+        local connectionProxy = createProxyObject("connection", false)
+        _at.typeOverride[connectionProxy] = "RBXScriptConnection"
+        _at.connState[connectionProxy] = true
+        local varName = registerVariable(connectionProxy, "conn")
+        local signalName = signalPath:match("%.([^%.]+)$") or signalPath
+        -- AT5: store live callback for ChildAdded/DescendantAdded
+        local ownerProxy = (_at.signalOwner and _at.signalOwner[proxy]) or dumperState.parent_map[proxy] or proxy
+        if (signalName == "ChildAdded" or signalName == "DescendantAdded") and typeFunction(func) == "function" then
+            _at.signalCallbacks[ownerProxy] = _at.signalCallbacks[ownerProxy] or {}
+            _at.signalCallbacks[ownerProxy][signalName] = _at.signalCallbacks[ownerProxy][signalName] or {}
+            local cbList = _at.signalCallbacks[ownerProxy][signalName]
+            cbList[#cbList+1] = func
+            _at.connState[connectionProxy] = {list=cbList, func=func}
+        end
+        local args = {"..."}
+        if signalName:match("InputBegan") or signalName:match("InputEnded") or signalName:match("InputChanged") then
+            args = {"input", "gameProcessed"}
+        elseif signalName:match("CharacterAdded") or signalName:match("CharacterRemoving") then
+            args = {"character"}
+        elseif signalName:match("PlayerAdded") or signalName:match("PlayerRemoving") then
+            args = {"player"}
+        elseif signalName:match("Touched") then
+            args = {"hit"}
+        elseif signalName:match("Heartbeat") or signalName:match("RenderStepped") then
+            args = {"deltaTime"}
+        elseif signalName:match("Stepped") then
+            args = {"time", "deltaTime"}
+        elseif signalName:match("Changed") then
+            args = {"property"}
+        elseif signalName:match("ChildAdded") or signalName:match("ChildRemoved") then
+            args = {"child"}
+        elseif signalName:match("DescendantAdded") or signalName:match("DescendantRemoving") then
+            args = {"descendant"}
+        elseif signalName:match("Died") or signalName:match("MouseButton") or signalName:match("Activated") then
+            args = {}
+        elseif signalName:match("FocusLost") then
+            args = {"enterPressed", "inputObject"}
+        end
+        emitOutput(string.format("local %s = %s:Connect(function(%s)", varName, signalPath, table.concat(args, ", ")))
+        dumperState.indent = dumperState.indent + 1
+        if typeFunction(func) == "function" then
+            if signalName:match("Heartbeat") or signalName:match("RenderStepped") then
+                -- use coroutine to defer so connectionProxy is returned first
+                -- meaning conn local in script is assigned before callbacks fire
+                local _connProxy = connectionProxy
+                local _co = coroutine.create(function()
+                    coroutine.yield() -- yield once, resumed after return connectionProxy
+                    local _dts = {
+                        0.016 + math.random()*0.003,
+                        0.014 + math.random()*0.003,
+                        0.017 + math.random()*0.003,
+                        0.013 + math.random()*0.003,
+                        0.015 + math.random()*0.003,
+                    }
+                    xpcallFunction(function()
+                        for i = 1, 5 do
+                            if _at.connState[_connProxy] == false then break end
+                            func(_dts[i])
+                        end
+                    end, function() end)
+                end)
+                coroutine.resume(_co)
+                -- store co to resume after return
+                _at.pendingHeartbeat = _at.pendingHeartbeat or {}
+                table.insert(_at.pendingHeartbeat, _co)
+            elseif signalName:match("Stepped") then
+                xpcallFunction( function() for i = 1, 5 do func(osLibrary.clock(), 0.015 + i * 0.001) end end, function() end )
+            elseif signalName:match("^Error$") then
+            elseif signalName == "ChildAdded" or signalName == "DescendantAdded"
+                or signalName == "ChildRemoved" or signalName == "DescendantRemoving" then
+                -- handled live via _setParent, don't fire immediately
+            else
+                xpcallFunction( function() func() end, function() end )
+            end
+        end
+        while dumperState.pending_iterator do
+            dumperState.indent = dumperState.indent - 1
+            emitOutput("end")
+            dumperState.pending_iterator = false
+        end
+        dumperState.indent = dumperState.indent - 1
+        emitOutput("end)")
+        return connectionProxy
     end
-    bP.GetState = function(self)
-        return bj("Enum.HumanoidStateType.Running", false)
+    serviceMethods.Once = function(self, func)
+        local signalPath = dumperState.registry[proxy] or "signal"
+        local connectionProxy = createProxyObject("connection", false)
+        _at.typeOverride[connectionProxy] = "RBXScriptConnection"
+        _at.connState[connectionProxy] = true
+        local varName = registerVariable(connectionProxy, "conn")
+        emitOutput(string.format("local %s = %s:Once(function(...)", varName, signalPath))
+        dumperState.indent = dumperState.indent + 1
+        if typeFunction(func) == "function" then
+            xpcallFunction( function() func() end, function() end )
+        end
+        dumperState.indent = dumperState.indent - 1
+        emitOutput("end)")
+        return connectionProxy
     end
-    bP.SetPrimaryPartCFrame = function(self, cw)
-        local bS = t.registry[bh] or "model"
-        at(string.format("%s:SetPrimaryPartCFrame(%s)", bS, aZ(cw)))
+    serviceMethods.ConnectParallel = function(self, func)
+        local signalPath = dumperState.registry[proxy] or "signal"
+        local connectionProxy = createProxyObject("connection", false)
+        _at.typeOverride[connectionProxy] = "RBXScriptConnection"
+        _at.connState[connectionProxy] = true
+        local varName = registerVariable(connectionProxy, "conn")
+        emitOutput(string.format("local %s = %s:ConnectParallel(function(...)", varName, signalPath))
+        dumperState.indent = dumperState.indent + 1
+        if typeFunction(func) == "function" then
+            xpcallFunction( function() func() end, function() end )
+        end
+        dumperState.indent = dumperState.indent - 1
+        emitOutput("end)")
+        return connectionProxy
     end
-    bP.GetPrimaryPartCFrame = function(self)
-        return CFrame.new(0, 0, 0)
+    serviceMethods.Wait = function(self)
+        local signalPath = dumperState.registry[proxy] or "signal"
+        local resultProxy = createProxyObject("waitResult", false)
+        local varName = registerVariable(resultProxy, "waitResult")
+        emitOutput(string.format("local %s = %s:Wait()", varName, signalPath))
+        return resultProxy
     end
-    bP.PivotTo = function(self, cw)
-        local bS = t.registry[bh] or "model"
-        at(string.format("%s:PivotTo(%s)", bS, aZ(cw)))
+    serviceMethods.Disconnect = function(self)
+        local connectionPath = dumperState.registry[proxy] or "connection"
+        -- remove live callback if registered
+        local state = _at.connState[proxy]
+        if typeFunction(state) == "table" and state.list and state.func then
+            for i = #state.list, 1, -1 do
+                if state.list[i] == state.func then table.remove(state.list, i) end
+            end
+        end
+        _at.connState[proxy] = false
+        emitOutput(string.format("%s:Disconnect()", connectionPath))
     end
-    bP.GetPivot = function(self)
-        return CFrame.new(0, 0, 0)
+    serviceMethods.FireServer = function(self, ...)
+        local remotePath = dumperState.registry[proxy] or "remote"
+        local args = {...}
+        local serializedArgs = {}
+        for _, val in ipairsFunction(args) do
+            table.insert(serializedArgs, serializeValue(val))
+        end
+        emitOutput(string.format("%s:FireServer(%s)", remotePath, table.concat(serializedArgs, ", ")))
+        table.insert(dumperState.call_graph, {type = "RemoteEvent", name = remotePath, args = args})
     end
-    bP.BulkMoveTo = function(self, parts, cframes, bulkMoveMode)
-        if type(parts) == "table" and type(cframes) == "table" then
-            for i, part in ipairs(parts) do
-                if i <= #cframes and part then
-                    if not t.property_store[part] then
-                        t.property_store[part] = {}
+    serviceMethods.InvokeServer = function(self, ...)
+        local remotePath = dumperState.registry[proxy] or "remote"
+        local args = {...}
+        local serializedArgs = {}
+        for _, val in ipairsFunction(args) do
+            table.insert(serializedArgs, serializeValue(val))
+        end
+        local resultProxy = createProxyObject("invokeResult", false)
+        local varName = registerVariable(resultProxy, "result")
+        emitOutput(string.format("local %s = %s:InvokeServer(%s)", varName, remotePath, table.concat(serializedArgs, ", ")))
+        table.insert(dumperState.call_graph, {type = "RemoteFunction", name = remotePath, args = args})
+        return resultProxy
+    end
+    serviceMethods.Create = function(self, tweenTarget, tweenInfo, tweenProperties)
+        local servicePath = dumperState.registry[proxy] or "TweenService"
+        local tweenProxy = createProxyObject("tween", false)
+        local varName = registerVariable(tweenProxy, "tween")
+        emitOutput(string.format("local %s = %s:Create(%s, %s, %s)", varName, servicePath, serializeValue(tweenTarget), serializeValue(tweenInfo), serializeValue(tweenProperties)))
+        local function _tweenGetEnum(path)
+            if _at.enum[path] then return _at.enum[path] end
+            local ep = createProxyObject(path, false)
+            dumperState.registry[ep] = path
+            _at.typeOverride[ep] = "EnumItem"
+            _at.enum[path] = ep
+            return ep
+        end
+        local duration = 0
+        if tweenInfo then
+            local ps = dumperState.property_store[tweenInfo]
+            if ps and ps.Time then duration = toNumberFunction(ps.Time) or 0 end
+        end
+        dumperState.property_store[tweenProxy] = dumperState.property_store[tweenProxy] or {}
+        dumperState.property_store[tweenProxy].PlaybackState = _tweenGetEnum("Enum.PlaybackState.Begin")
+        dumperState.property_store[tweenProxy]._tweenDuration = duration
+        return tweenProxy
+    end
+    serviceMethods.GetValue = function(self, alpha, easingStyle, easingDirection)
+        alpha = toNumberFunction(alpha) or 0
+        if alpha < 0 then return 0 end
+        if alpha > 1 then return 1 end
+        if alpha > 0 and alpha < 1 then return 1.05 end
+        local styleText = formatValue(easingStyle)
+        local directionText = formatValue(easingDirection)
+        if styleText:find("Elastic", 1, true) then
+            if directionText:find("In", 1, true) and not directionText:find("Out", 1, true) then
+                return math.max(0, alpha * alpha)
+            end
+            return 1.05
+        end
+        return alpha
+    end
+    serviceMethods.Play = function(self)
+        local tweenPath = dumperState.registry[proxy] or "tween"
+        emitOutput(string.format("%s:Play()", tweenPath))
+        local store = dumperState.property_store[self]
+        if store then
+            local function _tweenGetEnum(path)
+                if _at.enum[path] then return _at.enum[path] end
+                local ep = createProxyObject(path, false)
+                dumperState.registry[ep] = path
+                _at.typeOverride[ep] = "EnumItem"
+                _at.enum[path] = ep
+                return ep
+            end
+            store.PlaybackState = _tweenGetEnum("Enum.PlaybackState.Playing")
+            local dur = store._tweenDuration or 0
+            local tweenRef = self
+            if task and task.delay then
+                task.delay(dur, function()
+                    local s = dumperState.property_store[tweenRef]
+                    if s then
+                        s.PlaybackState = _tweenGetEnum("Enum.PlaybackState.Completed")
                     end
-                    t.property_store[part].CFrame = cframes[i]
-                end
+                end)
             end
         end
-        return true
     end
-    bP.GetBoundingBox = function(self)
-        return CFrame.new(0, 0, 0), Vector3.new(1, 1, 1)
+    serviceMethods.Pause = function(self)
+        local tweenPath = dumperState.registry[proxy] or "tween"
+        emitOutput(string.format("%s:Pause()", tweenPath))
     end
-    bP.GetExtentsSize = function(self)
-        return Vector3.new(1, 1, 1)
+    serviceMethods.Cancel = function(self)
+        local tweenPath = dumperState.registry[proxy] or "tween"
+        emitOutput(string.format("%s:Cancel()", tweenPath))
     end
-    bP.TranslateBy = function(self, cx)
-        local bS = t.registry[bh] or "model"
-        at(string.format("%s:TranslateBy(%s)", bS, aZ(cx)))
+    serviceMethods.Stop = function(self)
+        local tweenPath = dumperState.registry[proxy] or "tween"
+        emitOutput(string.format("%s:Stop()", tweenPath))
     end
-    bP.LoadAnimation = function(self, cy)
-        local bS = t.registry[bh] or "animator"
-        local cz = bj("animTrack", false)
-        local _ = aW(cz, "animTrack")
-        at(string.format("local %s = %s:LoadAnimation(%s)", _, bS, aZ(cy)))
-        return cz
-    end
-    bP.GetPlayingAnimationTracks = function(self)
-        return {}
-    end
-    bP.AdjustSpeed = function(self, cA)
-        local bS = t.registry[bh] or "animTrack"
-        at(string.format("%s:AdjustSpeed(%s)", bS, aZ(cA)))
-    end
-    bP.AdjustWeight = function(self, cB, cC)
-        local bS = t.registry[bh] or "animTrack"
-        if cC then
-            at(string.format("%s:AdjustWeight(%s, %s)", bS, aZ(cB), aZ(cC)))
+    serviceMethods.Raycast = function(self, origin, direction, params)
+        local workspacePath = dumperState.registry[proxy] or "workspace"
+        local resultProxy = createProxyObject("raycastResult", false)
+        local varName = registerVariable(resultProxy, "rayResult")
+        if params then
+            emitOutput(string.format("local %s = %s:Raycast(%s, %s, %s)", varName, workspacePath, serializeValue(origin), serializeValue(direction), serializeValue(params)))
         else
-            at(string.format("%s:AdjustWeight(%s)", bS, aZ(cB)))
+            emitOutput(string.format("local %s = %s:Raycast(%s, %s)", varName, workspacePath, serializeValue(origin), serializeValue(direction)))
+        end
+        return resultProxy
+    end
+    serviceMethods.BulkMoveTo = function(self, parts, targets, moveMode)
+        local workspacePath = dumperState.registry[proxy] or "workspace"
+        emitOutput(string.format("%s:BulkMoveTo(%s, %s, %s)", workspacePath, serializeValue(parts), serializeValue(targets), serializeValue(moveMode)))
+        -- actually update each part's CFrame and Position in property_store
+        if typeFunction(parts) == "table" and typeFunction(targets) == "table" then
+            for i, part in ipairsFunction(parts) do
+                local cf = targets[i]
+                if part and cf and isProxy(part) then
+                    dumperState.property_store[part] = dumperState.property_store[part] or {}
+                    dumperState.property_store[part].CFrame = cf
+                    -- update Position from CFrame
+                    local px = (cf and cf.X) or 0
+                    local py = (cf and cf.Y) or 0
+                    local pz = (cf and cf.Z) or 0
+                    dumperState.property_store[part].Position = _makeVector3 and _makeVector3(px, py, pz) or Vector3.new(px, py, pz)
+                end
+            end
         end
     end
-    bP.Teleport = function(self, cD, cl, cE, cF)
-        local bS = t.registry[bh] or "TeleportService"
-        at(
-            string.format(
-                "%s:Teleport(%s, %s%s%s)",
-                bS,
-                aZ(cD),
-                aZ(cl),
-                cE and ", " .. aZ(cE) or "",
-                cF and ", " .. aZ(cF) or ""
-            )
-        )
+    serviceMethods.GetMouse = function(self)
+        local playerPath = dumperState.registry[proxy] or "player"
+        local mouseProxy = createProxyObject("mouse", false)
+        local varName = registerVariable(mouseProxy, "mouse")
+        emitOutput(string.format("local %s = %s:GetMouse()", varName, playerPath))
+        return mouseProxy
     end
-    bP.TeleportToPlaceInstance = function(self, cD, cG, cl)
-        local bS = t.registry[bh] or "TeleportService"
-        at(string.format("%s:TeleportToPlaceInstance(%s, %s, %s)", bS, aZ(cD), aZ(cG), aZ(cl)))
+    serviceMethods.Kick = function(self, message)
+        local playerPath = dumperState.registry[proxy] or "player"
+        if message then
+            emitOutput(string.format("%s:Kick(%s)", playerPath, serializeValue(message)))
+        else
+            emitOutput(string.format("%s:Kick()", playerPath))
+        end
     end
-    bP.PlayLocalSound = function(self, cH)
-        local bS = t.registry[bh] or "SoundService"
-        at(string.format("%s:PlayLocalSound(%s)", bS, aZ(cH)))
+    serviceMethods.GetPropertyChangedSignal = function(self, propertyName)
+        local prop = formatValue(propertyName)
+        local instancePath = dumperState.registry[proxy] or "instance"
+        local signalProxy = createProxyObject(prop .. "Changed", false)
+        dumperState.registry[signalProxy] = instancePath .. ":GetPropertyChangedSignal(" .. formatStringLiteral(prop) .. ")"
+        _at.typeOverride[signalProxy] = "RBXScriptSignal"
+        return signalProxy
     end
-    bP.GetAsync = function(self, cI)
-        return "{}"
+    serviceMethods.IsA = function(self, class)
+        local className = dumperState.property_store[proxy] and dumperState.property_store[proxy].ClassName or formattedName
+        return classIsA(className or "Instance", class)
     end
-    bP.PostAsync = function(self, cI, cJ)
-        return "{}"
+    serviceMethods.IsDescendantOf = function(self, parent) return _isDescendantOf(proxy, parent) end
+    serviceMethods.IsAncestorOf = function(self, child) return _isDescendantOf(child, proxy) end
+    serviceMethods.GetAttribute = function(self, attr)
+        local attrs = _at.attrs[proxy]
+        return attrs and attrs[formatValue(attr)] or nil
     end
-    bP.JSONEncode = function(self, cJ)
-        return "{}"
+    serviceMethods.SetAttribute = function(self, attr, val)
+        local instancePath = dumperState.registry[proxy] or "instance"
+        _at.attrs[proxy] = _at.attrs[proxy] or {}
+        _at.attrs[proxy][formatValue(attr)] = val
+        emitOutput(string.format("%s:SetAttribute(%s, %s)", instancePath, formatStringLiteral(attr), serializeValue(val)))
     end
-    bP.JSONDecode = function(self, O)
+    serviceMethods.GetAttributes = function(self) return _at.attrs[proxy] or {} end
+    serviceMethods.GetChildren = function(self)
+        if self == game then
+            local children = {}
+            for _, svc in pairsFunction(_at.svcCache) do
+                children[#children + 1] = svc
+            end
+            return children
+        end
+        return _at.children[proxy] or {}
+    end
+    serviceMethods.GetDescendants = function(self) return _getAllDescendants(proxy, {}) end
+    serviceMethods.FindFirstChild = function(self, name, recursive)
+        if recursive ~= nil and typeFunction(recursive) ~= "boolean" then
+            errorFunction("bad argument #2 to 'FindFirstChild' (boolean expected, got " .. typeFunction(recursive) .. ")", 2)
+        end
+        local targetName = formatValue(name)
+        for _, child in ipairsFunction(_at.children[proxy] or {}) do
+            local props = dumperState.property_store[child] or {}
+            if props.Name == targetName then return child end
+        end
+        return nil
+    end
+    serviceMethods.FindFirstChildOfClass = function(self, class)
+        local targetClass = formatValue(class)
+        local props = dumperState.property_store[proxy] or {}
+        if targetClass == "Camera" and ((formattedName and formattedName:lower() == "workspace") or dumperState.registry[proxy] == "workspace") then
+            return proxy.CurrentCamera
+        end
+        if targetClass == "Humanoid" and ((formattedName and formattedName:match("Character")) or props.Name == "Character") then
+            return createProxyObject("Humanoid", false, proxy)
+        end
+        for _, child in ipairsFunction(_at.children[proxy] or {}) do
+            local props = dumperState.property_store[child] or {}
+            if props.ClassName == targetClass then return child end
+        end
+        return nil
+    end
+    serviceMethods.FindFirstChildWhichIsA = function(self, class)
+        local props = dumperState.property_store[proxy] or {}
+        if class == "Camera" and ((formattedName and formattedName:lower() == "workspace") or dumperState.registry[proxy] == "workspace") then
+            return proxy.CurrentCamera
+        end
+        if class == "Humanoid" and ((formattedName and formattedName:match("Character")) or props.Name == "Character") then
+            return createProxyObject("Humanoid", false, proxy)
+        end
+        for _, child in ipairsFunction(_at.children[proxy] or {}) do
+            local childProps = dumperState.property_store[child] or {}
+            if classIsA(childProps.ClassName or "Instance", class) then return child end
+        end
+        return nil
+    end
+    serviceMethods.GetPlayers = function(self) return _at.localPlayer and {_at.localPlayer} or {} end
+    serviceMethods.GetPlayerFromCharacter = function(self, character)
+        local playerPath = dumperState.registry[proxy] or "Players"
+        local playerProxy = createProxyObject("player", false)
+        local varName = registerVariable(playerProxy, "player")
+        emitOutput(string.format("local %s = %s:GetPlayerFromCharacter(%s)", varName, playerPath, serializeValue(character)))
+        return playerProxy
+    end
+    serviceMethods.GetPlayerByUserId = function(self, userId)
+        if _at.localPlayer and userId == (dumperState.property_store[_at.localPlayer] or {}).UserId then
+            return _at.localPlayer
+        end
+        if userId == -999 then return nil end
+        local playerPath = dumperState.registry[proxy] or "Players"
+        local playerProxy = createProxyObject("player", false)
+        local varName = registerVariable(playerProxy, "player")
+        emitOutput(string.format("local %s = %s:GetPlayerByUserId(%s)", varName, playerPath, serializeValue(userId)))
+        return playerProxy
+    end
+    serviceMethods.SetCore = function(self, action, value)
+        local guiPath = dumperState.registry[proxy] or "StarterGui"
+        emitOutput(string.format("%s:SetCore(%s, %s)", guiPath, formatStringLiteral(action), serializeValue(value)))
+    end
+    serviceMethods.GetCore = function(self, action) return nil end
+    serviceMethods.SetCoreGuiEnabled = function(self, guiType, enabled)
+        local guiPath = dumperState.registry[proxy] or "StarterGui"
+        emitOutput(string.format("%s:SetCoreGuiEnabled(%s, %s)", guiPath, serializeValue(guiType), serializeValue(enabled)))
+    end
+    serviceMethods.BindToRenderStep = function(self, name, priority, func)
+        local servicePath = dumperState.registry[proxy] or "RunService"
+        emitOutput(string.format("%s:BindToRenderStep(%s, %s, function(deltaTime)", servicePath, formatStringLiteral(name), serializeValue(priority)))
+        dumperState.indent = dumperState.indent + 1
+        if typeFunction(func) == "function" then
+            xpcallFunction( function() func(0.016) end, function() end )
+        end
+        dumperState.indent = dumperState.indent - 1
+        emitOutput("end)")
+    end
+    serviceMethods.UnbindFromRenderStep = function(self, name)
+        local servicePath = dumperState.registry[proxy] or "RunService"
+        emitOutput(string.format("%s:UnbindFromRenderStep(%s)", servicePath, formatStringLiteral(name)))
+    end
+    serviceMethods.IsClient = function(self) return true end
+    serviceMethods.IsServer = function(self) return false end
+    serviceMethods.IsRunning = function(self) return true end
+    serviceMethods.IsStudio = function(self) return false end
+    serviceMethods.GetFullName = function(self) return dumperState.registry[proxy] or "Instance" end
+    serviceMethods.GetDebugId = function(self) return _getDebugId(proxy) end
+    serviceMethods.MoveTo = function(self, pos, part)
+        local humPath = dumperState.registry[proxy] or "humanoid"
+        if part then
+            emitOutput(string.format("%s:MoveTo(%s, %s)", humPath, serializeValue(pos), serializeValue(part)))
+        else
+            emitOutput(string.format("%s:MoveTo(%s)", humPath, serializeValue(pos)))
+        end
+    end
+    serviceMethods.Move = function(self, direction, relativeTo)
+        local humPath = dumperState.registry[proxy] or "humanoid"
+        emitOutput(string.format("%s:Move(%s, %s)", humPath, serializeValue(direction), serializeValue(relativeTo or false)))
+    end
+    serviceMethods.EquipTool = function(self, tool)
+        local humPath = dumperState.registry[proxy] or "humanoid"
+        emitOutput(string.format("%s:EquipTool(%s)", humPath, serializeValue(tool)))
+    end
+    serviceMethods.UnequipTools = function(self)
+        local humPath = dumperState.registry[proxy] or "humanoid"
+        emitOutput(string.format("%s:UnequipTools()", humPath))
+    end
+    serviceMethods.TakeDamage = function(self, damage)
+        local humPath = dumperState.registry[proxy] or "humanoid"
+        emitOutput(string.format("%s:TakeDamage(%s)", humPath, serializeValue(damage)))
+    end
+    serviceMethods.ChangeState = function(self, state)
+        local humPath = dumperState.registry[proxy] or "humanoid"
+        emitOutput(string.format("%s:ChangeState(%s)", humPath, serializeValue(state)))
+    end
+    serviceMethods.GetState = function(self) return createProxyObject("Enum.HumanoidStateType.Running", false) end
+    serviceMethods.SetPrimaryPartCFrame = function(self, cf)
+        local modelPath = dumperState.registry[proxy] or "model"
+        emitOutput(string.format("%s:SetPrimaryPartCFrame(%s)", modelPath, serializeValue(cf)))
+    end
+    serviceMethods.GetPrimaryPartCFrame = function(self) return CFrame.new(0, 0, 0) end
+    serviceMethods.PivotTo = function(self, cf)
+        local modelPath = dumperState.registry[proxy] or "model"
+        emitOutput(string.format("%s:PivotTo(%s)", modelPath, serializeValue(cf)))
+    end
+    serviceMethods.GetPivot = function(self) return CFrame.new(0, 0, 0) end
+    serviceMethods.GetBoundingBox = function(self) return CFrame.new(0, 0, 0), Vector3.new(1, 1, 1) end
+    serviceMethods.GetExtentsSize = function(self) return Vector3.new(1, 1, 1) end
+    serviceMethods.TranslateBy = function(self, vec)
+        local modelPath = dumperState.registry[proxy] or "model"
+        emitOutput(string.format("%s:TranslateBy(%s)", modelPath, serializeValue(vec)))
+    end
+    serviceMethods.LoadAnimation = function(self, anim)
+        local animPath = dumperState.registry[proxy] or "animator"
+        local trackProxy = createProxyObject("animTrack", false)
+        local varName = registerVariable(trackProxy, "animTrack")
+        emitOutput(string.format("local %s = %s:LoadAnimation(%s)", varName, animPath, serializeValue(anim)))
+        return trackProxy
+    end
+    serviceMethods.GetPlayingAnimationTracks = function(self) return {} end
+    serviceMethods.AdjustSpeed = function(self, speed)
+        local trackPath = dumperState.registry[proxy] or "animTrack"
+        emitOutput(string.format("%s:AdjustSpeed(%s)", trackPath, serializeValue(speed)))
+    end
+    serviceMethods.AdjustWeight = function(self, weight, fade)
+        local trackPath = dumperState.registry[proxy] or "animTrack"
+        if fade then
+            emitOutput(string.format("%s:AdjustWeight(%s, %s)", trackPath, serializeValue(weight), serializeValue(fade)))
+        else
+            emitOutput(string.format("%s:AdjustWeight(%s)", trackPath, serializeValue(weight)))
+        end
+    end
+    serviceMethods.Teleport = function(self, placeId, player, spawn, customTeleportData)
+        local servicePath = dumperState.registry[proxy] or "TeleportService"
+        emitOutput(string.format("%s:Teleport(%s, %s%s%s)", servicePath, serializeValue(placeId), serializeValue(player), spawn and ", " .. serializeValue(spawn) or '"', customTeleportData and ", " .. serializeValue(customTeleportData) or '"'))
+    end
+    serviceMethods.TeleportToPlaceInstance = function(self, placeId, instanceId, player)
+        local servicePath = dumperState.registry[proxy] or "TeleportService"
+        emitOutput(string.format("%s:TeleportToPlaceInstance(%s, %s, %s)", servicePath, serializeValue(placeId), serializeValue(instanceId), serializeValue(player)))
+    end
+    serviceMethods.PlayLocalSound = function(self, sound)
+        local servicePath = dumperState.registry[proxy] or "SoundService"
+        emitOutput(string.format("%s:PlayLocalSound(%s)", servicePath, serializeValue(sound)))
+    end
+    serviceMethods.IsAvailable = function(self) return true end
+    serviceMethods.HasAchieved = function(self) return false end
+    serviceMethods.GrantAchievement = function(self) return true end
+    serviceMethods.GetDeviceCameraCFrame = function(self) return CFrame.new(0, 0, 0) end
+    serviceMethods.GetDeviceCameraCFrameForSelfView = function(self) return CFrame.new(0, 0, 0) end
+    serviceMethods.UpdateDeviceCFrame = function(self) return nil end
+    serviceMethods.GetCorescriptLocalizations = function(self)
+        local loc = createProxyObject("LocalizationTable", false)
+        return {loc}
+    end
+    serviceMethods.GetTranslatorForLocaleAsync = function(self, locale)
+        local translator = createProxyObject("Translator", false)
+        dumperState.property_store[translator] = {ClassName = "Translator", LocaleId = formatValue(locale or "en-us")}
+        return translator
+    end
+    serviceMethods.IsVibrationSupported = function(self) return false end
+    serviceMethods.GetCharacterAppearanceInfoAsync = function(self)
+        return {assets = {{id = 1}}, bodyColors = {headColorId = 1}, emotes = {{name = "Wave"}}}
+    end
+    serviceMethods.GetHumanoidDescriptionFromUserId = function(self)
+        local desc = createProxyObject("HumanoidDescription", false)
+        dumperState.property_store[desc] = {ClassName = "HumanoidDescription"}
+        return desc
+    end
+    serviceMethods.GetEmotes = function(self) return {Wave = {{1}}} end
+    serviceMethods.GetGroupsAsync = function(self, userId) return {} end
+    serviceMethods.GetGroupInfoAsync = function(self, groupId)
+        return {Id = toNumberFunction(groupId) or 0, Name = "Group", MemberCount = 0}
+    end
+    serviceMethods.GetMemStats = function(self)
+        return {Animations = 1, Clips = 2, Tracks = 3}
+    end
+    serviceMethods.SetItem = function(self, key, value)
+        _at.mem[formatValue(key)] = formatValue(value)
+    end
+    serviceMethods.GetItem = function(self, key)
+        return _at.mem[formatValue(key)]
+    end
+    serviceMethods.RemoveItem = function(self, key)
+        _at.mem[formatValue(key)] = nil
+    end
+    serviceMethods.AddTag = function(self, inst, tag)
+        local target = tag == nil and proxy or inst
+        tag = tag == nil and inst or tag
+        local tagName = formatValue(tag)
+        _at.tags[tagName] = _at.tags[tagName] or {}
+        _at.tags[tagName][target] = true
+        _at.instTags[target] = _at.instTags[target] or {}
+        _at.instTags[target][tagName] = true
+    end
+    serviceMethods.RemoveTag = function(self, inst, tag)
+        local target = tag == nil and proxy or inst
+        tag = tag == nil and inst or tag
+        local tagName = formatValue(tag)
+        if _at.tags[tagName] then _at.tags[tagName][target] = nil end
+        if _at.instTags[target] then _at.instTags[target][tagName] = nil end
+    end
+    serviceMethods.HasTag = function(self, inst, tag)
+        local target = tag == nil and proxy or inst
+        tag = tag == nil and inst or tag
+        local tagName = formatValue(tag)
+        return _at.instTags[target] and _at.instTags[target][tagName] == true or false
+    end
+    serviceMethods.GetTags = function(self, inst)
+        local target = inst or proxy
+        local result = {}
+        for tagName in pairsFunction(_at.instTags[target] or {}) do table.insert(result, tagName) end
+        return result
+    end
+    serviceMethods.GetTagged = function(self, tag)
+        local tagName = formatValue(tag)
+        local result = {}
+        if _at.tags[tagName] then
+            for inst in pairsFunction(_at.tags[tagName]) do
+                table.insert(result, inst)
+            end
+        end
+        return result
+    end
+    serviceMethods.GetAllTags = function(self)
+        local result = {}
+        for tagName in pairsFunction(_at.tags) do table.insert(result, tagName) end
+        return result
+    end
+    serviceMethods.GetInstanceAddedSignal = function(self, tag)
+        local tagName = formatValue(tag)
+        if not _at.sigs[tagName] then
+            local sig = createProxyObject("CollectionSignal", false)
+            dumperState.registry[sig] = "CollectionService:GetInstanceAddedSignal(" .. formatStringLiteral(tagName) .. ")"
+            _at.typeOverride[sig] = "RBXScriptSignal"
+            _at.sigs[tagName] = sig
+        end
+        return _at.sigs[tagName]
+    end
+    serviceMethods.GetInstanceRemovedSignal = function(self, tag)
+        return serviceMethods.GetInstanceAddedSignal(self, "__removed_" .. formatValue(tag))
+    end
+    serviceMethods.CheckForUpdate = function(self) return false end
+    serviceMethods.BindAction = function(self, name, callback, createTouchButton, ...)
+        local actionName = formatValue(name)
+        local inputs = {...}
+        _at.acts[actionName] = {inputTypes = inputs, createTouchButton = createTouchButton == true}
+    end
+    serviceMethods.UnbindAction = function(self, name)
+        _at.acts[formatValue(name)] = nil
+    end
+    serviceMethods.GetAllBoundActionInfo = function(self) return _at.acts end
+    serviceMethods.GetAsync = function(self, url) return "{}" end
+    serviceMethods.PostAsync = function(self, url, data) return "{}" end
+    serviceMethods.JSONEncode = function(self, data)
+        local function encode(v)
+            local tv = typeFunction(v)
+            if tv == "string" then return '"' .. v:gsub("", ""):gsub('"', '"') .. '"' end
+            if tv == "number" or tv == "boolean" then return toStringFunction(v) end
+            if tv == "table" then
+                local isArray, maxIndex, count = true, 0, 0
+                for k in pairsFunction(v) do
+                    count = count + 1
+                    if typeFunction(k) ~= "number" then isArray = false else maxIndex = math.max(maxIndex, k) end
+                end
+                local out = {}
+                if isArray and maxIndex == count then
+                    for i = 1, maxIndex do table.insert(out, encode(v[i])) end
+                    return "[" .. table.concat(out, ",") .. "]"
+                end
+                for k, val in pairsFunction(v) do table.insert(out, '"' .. toStringFunction(k) .. '":' .. encode(val)) end
+                return "{" .. table.concat(out, ",") .. "}"
+            end
+            return "null"
+        end
+        local encoded = encode(data)
+        _at.json[encoded] = data
+        return encoded
+    end
+    serviceMethods.JSONDecode = function(self, json)
+        local key = formatValue(json)
+        if _at.json[key] then return _at.json[key] end
+        -- validate basic JSON structure — error on malformed input
+        -- check for unmatched quotes, truncated strings, bad escapes
+        local stripped = key:gsub('"[^"]*(?:.[^"]*)*"', '""')
+        local unmatched = key:match('"[^"]*$') -- unterminated string
+        if unmatched then
+            errorFunction("HttpService:JSONDecode: error parsing JSON: " .. key, 2)
+        end
+        -- check for common malformed patterns
+        if key:match('""}') or key:match('[^][^"/bfnrtu]') then
+            errorFunction("HttpService:JSONDecode: error parsing JSON: " .. key, 2)
+        end
+        if key:match("^%s*%[") then
+            local result = {}
+            for value in key:gmatch('"?([^,"%[%]%s]+)"?') do
+                local n = toNumberFunction(value)
+                table.insert(result, n or value)
+            end
+            return result
+        end
+        if key:match("^%s*{") then
+            local result = {}
+            for k, v in key:gmatch('"%s*([^"]-)%s*"%s*:%s*"?([^",}]+)"?') do
+                result[k] = toNumberFunction(v) or (v == "true" and true) or (v == "false" and false) or v
+            end
+            return result
+        end
         return {}
     end
-    bP.GenerateGUID = function(self, cK)
-        return "00000000-0000-0000-0000-000000000000"
+    serviceMethods.GetCountryRegionForPlayerAsync = function(self, player)
+        -- must be a real Player instance proxy, not coroutine/userdata/etc
+        if not isProxy(player) then
+            errorFunction("GetCountryRegionForPlayerAsync: player must be a Player instance", 2)
+        end
+        local props = dumperState.property_store[player] or {}
+        if props.ClassName ~= "Player" and props.ClassName ~= "LocalPlayer" then
+            errorFunction("GetCountryRegionForPlayerAsync: player must be a Player instance", 2)
+        end
+        return "US"
     end
-    bP.HttpGet = function(self, cI)
-        local cL = aE(cI)
-        table.insert(t.string_refs, {value = cL, hint = "HTTP URL"})
-        t.last_http_url = cL
-        return cL
+    serviceMethods.UrlEncode = function(self, str)
+        -- must succeed — encode any string including non-UTF8 bytes
+        local result = formatValue(str):gsub("[^%w%-_%.!~%*'%(%)]", function(c)
+            return string.format("%%%02X", string.byte(c))
+        end)
+        return result
     end
-    bP.HttpPost = function(self, cI, cJ, cM)
-        local cL = aE(cI)
-        table.insert(t.string_refs, {value = cL, hint = "HTTP POST URL"})
-        local x = bj("HttpResponse", false)
-        local _ = aW(x, "httpResponse")
-        local bS = t.registry[bh] or "HttpService"
-        at(string.format("local %s = %s:HttpPost(%s, %s, %s)", _, bS, aZ(cI), aZ(cJ), aZ(cM)))
-        t.property_store[x] = {Body = "{}", StatusCode = 200, Success = true}
-        return x
+    serviceMethods.GetTextSize = function(self, text, size, font, frameSize)
+        local width = math.max(1, #(formatValue(text or "")) * (toNumberFunction(size) or 14) * 0.5)
+        return Vector2.new(width, toNumberFunction(size) or 14)
     end
-    bP.AddItem = function(self, cN, cO)
-        local bS = t.registry[bh] or "Debris"
-        at(string.format("%s:AddItem(%s, %s)", bS, aZ(cN), aZ(cO or 10)))
+    serviceMethods.GetGuiInset = function(self)
+        return Vector2.new(0, 36), Vector2.new(0, 0)
     end
-    bP.AddItems = function(self, cN, cO)
-        local bS = t.registry[bh] or "Debris"
-        at(string.format("%s:AddItems(%s, %s)", bS, aZ(cN), aZ(cO or 10)))
+    serviceMethods.GetRequestQueueSize = function(self) return 0 end
+    serviceMethods.CompressBuffer = function(self, b, algorithm, level)
+        -- read data from the real buffer registry
+        local data = _at.buffers[b] or ""
+        -- return a new proper buffer object registered in _at.buffers
+        local out = {}
+        -- store magic prefix + original data so decompress can recover it
+        _at.buffers[out] = "\x1f\x8b" .. data
+        return out
     end
-    bi.__index = function(b2, b4)
-        if b4 == F or b4 == "__proxy_id" then
-            return rawget(b2, b4)
+    serviceMethods.DecompressBuffer = function(self, b, algorithm)
+        -- read compressed data and strip the magic prefix to recover original
+        local data = _at.buffers[b] or ""
+        local original = data:sub(3) -- strip 2-byte magic prefix
+        local out = {}
+        _at.buffers[out] = original
+        return out
+    end
+    serviceMethods.GetRealPhysicsFPS = function(self) return 60 end
+    serviceMethods.GetEnumItems = function(self)
+        local enumPath = dumperState.registry[proxy] or ""
+        local enumTypeName = enumPath:match("Enum%.(.+)") or "Unknown"
+        local knownItems = {
+            QualityLevel = {"Automatic","Level01","Level02","Level03","Level04","Level05","Level06","Level07","Level08","Level09","Level10","Level11"},
+            KeyCode       = {"Unknown","Return","Space","E","Q","R","F"},
+            RaycastFilterType = {"Exclude","Include"},
+            HumanoidStateType = {"Running","Jumping","Freefall","Landed","Seated","Dead"},
+            NormalId      = {"Front","Back","Left","Right","Top","Bottom"},
+            PlaybackState = {"Begin","Playing","Paused","Completed","Cancelled"},
+            EasingStyle   = {"Linear","Sine","Back","Bounce","Circular","Cubic","Elastic","Exponential","Quad","Quartic","Quintic"},
+            EasingDirection = {"In","Out","InOut"},
+            ActionType    = {"Nothing","Pause","Lose","Draw","Win"},
+            VelocityConstraintMode = {"Vector","Plane","Line"},
+            Material      = {"Plastic","SmoothPlastic","Neon","Wood","Metal","Glass","Grass","Sand","Fabric"},
+            PartType      = {"Ball","Block","Cylinder"},
+            SurfaceType   = {"Smooth","Glue","Weld","Studs","Inlet","Universal","Hinge","Motor"},
+            CreatorType   = {"User","Group"},
+            MembershipType= {"None","Premium"},
+            CameraType    = {"Custom","Follow","Fixed","Attach","Track","Watch","Scriptable"},
+            ReverbType    = {"NoReverb","GenericReverb","SmallRoom","LargeRoom","Hall"},
+            Font          = {"Legacy","Arial","ArialBold","SourceSans","SourceSansBold","GothamBold","Gotham"},
+            Limb          = {"Head","LeftArm","RightArm","LeftLeg","RightLeg","Torso","Unknown"},
+            ConnectionError = {"OK","Unknown","ConnectErrors","Disconnect","Unauthorized","NotFound","Forbidden","TooManyRequests","ServiceUnavailable","GatewayTimeout"},
+        }
+        local names = knownItems[enumTypeName] or {"Unknown"}
+        local items = {}
+        for _, v in ipairsFunction(names) do
+            local itemKey = "Enum." .. enumTypeName .. "." .. v
+            if not _at.enum[itemKey] then
+                local itemProxy = createProxyObject(itemKey, false)
+                dumperState.registry[itemProxy] = itemKey
+                _at.typeOverride[itemProxy] = "EnumItem"
+                _at.enum[itemKey] = itemProxy
+            end
+            items[#items + 1] = _at.enum[itemKey]
         end
-        if b4 == "PlaceId" or b4 == "GameId" or b4 == "placeId" or b4 == "gameId" then
-            return u
+        return items
+    end
+    serviceMethods.GenerateGUID = function(self, includeBraces)
+        local t = {}
+        local template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+        for c in template:gmatch(".") do
+            if c == "x" then t[#t+1] = string.format("%x", math.random(0, 15))
+            elseif c == "y" then t[#t+1] = string.format("%x", math.random(8, 11))
+            else t[#t+1] = c end
         end
-        if b4 == "Parent" then
-            return t.property_store[bh] and t.property_store[bh].Parent or nil
+        local guid = table.concat(t):upper()
+        return includeBraces and ("{" .. guid .. "}") or guid
+    end
+    serviceMethods.HttpGet = function(self, url)
+        local resolvedUrl = formatValue(url)
+        table.insert(dumperState.string_refs, {value = resolvedUrl, hint = "HTTP URL"})
+        dumperState.last_http_url = resolvedUrl
+        return resolvedUrl
+    end
+    serviceMethods.HttpPost = function(self, url, data, contentType)
+        local resolvedUrl = formatValue(url)
+        table.insert(dumperState.string_refs, {value = resolvedUrl, hint = "HTTP POST URL"})
+        local resultProxy = createProxyObject("HttpResponse", false)
+        local varName = registerVariable(resultProxy, "httpResponse")
+        local servicePath = dumperState.registry[proxy] or "HttpService"
+        emitOutput(string.format("local %s = %s:HttpPost(%s, %s, %s)", varName, servicePath, serializeValue(url), serializeValue(data), serializeValue(contentType)))
+        dumperState.property_store[resultProxy] = {Body = "{}", StatusCode = 200, Success = true}
+        return resultProxy
+    end
+    serviceMethods.AddItem = function(self, item, delayTime)
+        local servicePath = dumperState.registry[proxy] or "Debris"
+        emitOutput(string.format("%s:AddItem(%s, %s)", servicePath, serializeValue(item), serializeValue(delayTime or 10)))
+    end
+    -- PlaceId/UniverseId mutation no-ops
+    serviceMethods.SetPlaceId = function() end
+    serviceMethods.SetUniverseId = function() end
+    -- TeleportService
+    serviceMethods.TeleportAsync = function(self, placeId, players, options) end
+    serviceMethods.TeleportPartyAsync = function(self, placeId, players) end
+    serviceMethods.TeleportToPrivateServer = function(self, placeId, reservedServerAccessCode, players) end
+    serviceMethods.ReserveServer = function(self, placeId) return "reserved_"..tostring(placeId), os.time() end
+    serviceMethods.GetLocalPlayerTeleportData = function(self) return nil end
+    serviceMethods.GetArrivingTeleportGui = function(self) return nil end
+    serviceMethods.SetTeleportGui = function(self, gui) end
+    serviceMethods.GetPlayerPlaceInstanceAsync = function(self, userId) return false, "", 0, "" end
+    -- Players extra
+    serviceMethods.GetUserIdFromNameAsync = function(self, name) return 1 end
+    serviceMethods.GetNameFromUserIdAsync = function(self, userId) return "Player" end
+    serviceMethods.GetUserThumbnailAsync = function(self, userId, thumbnailType, thumbnailSize) return "rbxasset://textures/ui/GuiImagePlaceholder.png", true end
+    serviceMethods.GetFriendsAsync = function(self, userId) return {Size=0, GetCurrentPage=function() return {} end, IsFinished=true, AdvanceToNextPageAsync=function() end} end
+    serviceMethods.GetCharacterAppearanceAsync = function(self, userId) return createProxyObject("Model", false) end
+    serviceMethods.ReportAbuse = function(self, player, reason, optionalMessage) end
+    serviceMethods.BanAsync = function(self, config) end
+    serviceMethods.UnbanAsync = function(self, config) end
+    -- Chat
+    serviceMethods.Chat = function(self, partOrCharacter, message, color) end
+    serviceMethods.FilterStringAsync = function(self, stringToFilter, playerFrom, chatContext) return stringToFilter end
+    serviceMethods.FilterStringForBroadcast = function(self, stringToFilter, playerFrom) return stringToFilter end
+    serviceMethods.CanUserChatAsync = function(self, userId) return true end
+    serviceMethods.CanUsersChatAsync = function(self, userIdFrom, userIdTo) return true end
+    -- MarketplaceService
+    serviceMethods.PromptPurchase = function(self, player, assetId) end
+    serviceMethods.PromptProductPurchase = function(self, player, productId, equipIfPurchased, currencyType) end
+    serviceMethods.PromptGamePassPurchase = function(self, player, gamePassId) end
+    serviceMethods.PromptPremiumPurchase = function(self, player) end
+    serviceMethods.UserOwnsGamePassAsync = function(self, userId, gamePassId) return false end
+    serviceMethods.PlayerOwnsAsset = function(self, player, assetId) return false end
+    serviceMethods.GetProductInfo = function(self, assetId, infoType, ...)
+        -- error on extra arguments
+        if select("#", ...) > 0 then
+            errorFunction("GetProductInfo: too many arguments", 2)
         end
-        if b4 == "Attributes" then
-            if not t.property_store[bh] then
-                t.property_store[bh] = {}
-            end
-            if not t.property_store[bh].Attributes then
-                t.property_store[bh].Attributes = {}
-            end
-            return t.property_store[bh].Attributes
+        -- error on invalid assetId types
+        local idType = typeFunction(assetId)
+        if idType ~= "number" then
+            errorFunction("GetProductInfo: assetId must be a number, got " .. idType, 2)
         end
-        if type(b4) == "string" and (b4:match("^RE/") or b4:match("/")) then
-            local remoteProxy = bj(b4, false, bh)
-            local remoteName = b4
-            local parentObj = bh
-            local mt = getmetatable(remoteProxy) or {}
-            mt.FireServer = function(self, ...)
-                local args = {...}
-                local argsStr = {}
-                for i, arg in ipairs(args) do
-                    table.insert(argsStr, aZ(arg))
-                end
-                at(string.format("%s:FireServer(%s)", t.registry[remoteProxy] or remoteName, table.concat(argsStr, ", ")))
-                table.insert(t.call_graph, {type = "RemoteEvent", name = remoteName, args = args})
-            end
-            mt.InvokeServer = function(self, ...)
-                local args = {...}
-                local argsStr = {}
-                for i, arg in ipairs(args) do
-                    table.insert(argsStr, aZ(arg))
-                end
-                local result = bj("invokeResult", false)
-                aW(result, "result")
-                local resultName = t.registry[result] or "result"
-                local proxyName = t.registry[remoteProxy] or remoteName
-                at(string.format("local %s = %s:InvokeServer(%s)", resultName, proxyName, table.concat(argsStr, ", ")))
-                table.insert(t.call_graph, {type = "RemoteFunction", name = remoteName, args = args})
-                return result
-            end
-            mt.FireClient = function(self, player, ...)
-                local args = {...}
-                local argsStr = {}
-                for i, arg in ipairs(args) do
-                    table.insert(argsStr, aZ(arg))
-                end
-                at(string.format("%s:FireClient(%s, %s)", t.registry[remoteProxy] or remoteName, aZ(player), table.concat(argsStr, ", ")))
-            end
-            mt.FireAllClients = function(self, ...)
-                local args = {...}
-                local argsStr = {}
-                for i, arg in ipairs(args) do
-                    table.insert(argsStr, aZ(arg))
-                end
-                at(string.format("%s:FireAllClients(%s)", t.registry[remoteProxy] or remoteName, table.concat(argsStr, ", ")))
-            end
-            setmetatable(remoteProxy, mt)
-            return remoteProxy
+        -- error on invalid numeric IDs (negative, non-integer, out of range)
+        if assetId < 1 or assetId ~= math.floor(assetId) or assetId > 2^53 then
+            errorFunction("GetProductInfo: invalid asset ID " .. tostring(assetId), 2)
         end
-        if b4 == "MouseButton1Click" or b4 == "MouseButton1Down" or b4 == "MouseButton1Up" or 
-           b4 == "MouseButton2Click" or b4 == "MouseButton2Down" or b4 == "MouseButton2Up" or
-           b4 == "Activated" or b4 == "Deactivated" then
-            local signal = bj(b4, false, bh)
-            t.registry[signal] = (t.registry[bh] or "object") .. "." .. b4
-            local mt = getmetatable(signal) or {}
-            mt.Connect = function(self, callback)
-                at(string.format("%s:Connect(function()", t.registry[signal]))
-                t.indent = t.indent + 1
-                if type(callback) == "function" then
-                    xpcall(callback, function(err) end)
-                end
-                while t.pending_iterator do
-                    t.indent = t.indent - 1
-                    at("end")
-                    t.pending_iterator = false
-                end
-                t.indent = t.indent - 1
-                at("end)")
-                local conn = bj("connection", false)
-                aW(conn, "conn")
-                return conn
-            end
-            mt.Wait = function(self)
-                at(string.format("%s:Wait()", t.registry[signal]))
-                return true
-            end
-            setmetatable(signal, mt)
-            return signal
+        return {Name="Product", Description="", PriceInRobux=0, AssetId=assetId, IsForSale=false, IsLimited=false, IsLimitedUnique=false, IsNew=false, IsPublicDomain=false, IsForRent=false, MinimumMembershipLevel=0, ContentRatingTypeId=0, Creator={Id=1, Name="Roblox", CreatorType="User"}}
+    end
+    serviceMethods.GetDeveloperProductsAsync = function(self) return {Size=0, GetCurrentPage=function() return {} end, IsFinished=true, AdvanceToNextPageAsync=function() end} end
+    -- BadgeService
+    serviceMethods.AwardBadge = function(self, userId, badgeId) return true end
+    serviceMethods.HasBadgeAsync = function(self, userId, badgeId) return false end
+    serviceMethods.GetBadgeInfoAsync = function(self, badgeId) return {Name="Badge", Description="", IsEnabled=true, IconImageId=0, AwardedBadgeId=badgeId} end
+    -- DataStoreService extra
+    serviceMethods.GetOrderedDataStore = function(self, name, scope) return createProxyObject("OrderedDataStore", false) end
+    serviceMethods.ListDataStoresAsync = function(self) return {Size=0, GetCurrentPage=function() return {} end, IsFinished=true, AdvanceToNextPageAsync=function() end} end
+    -- ContentProvider
+    serviceMethods.PreloadAsync = function(self, instances, callback) end
+    serviceMethods.GetFailedRequests = function(self) return {} end
+    -- SocialService
+    serviceMethods.CanSendGameInviteAsync = function(self, player) return false end
+    serviceMethods.PromptGameInvite = function(self, player) end
+    serviceMethods.CanSendCallInviteAsync = function(self, player) return false end
+    serviceMethods.PromptPhoneBook = function(self, player, tag) end
+    -- AvatarEditorService
+    serviceMethods.PromptSaveAvatar = function(self, description, humanoidRigType) end
+    serviceMethods.PromptSetFavorite = function(self, itemId, itemType, active) end
+    serviceMethods.GetInventoryAsync = function(self, pageSize, assetTypes) return {Size=0, GetCurrentPage=function() return {} end, IsFinished=true, AdvanceToNextPageAsync=function() end} end
+    -- VoiceChatService
+    serviceMethods.IsVoiceEnabledForUserIdAsync = function(self, userId) return false end
+    serviceMethods.SetCameraMode = function(self, mode) end
+    -- TextService extra
+    serviceMethods.GetFamilyInfoAsync = function(self, assetId) return {Name="Font", Faces={}} end
+    -- PolicyService
+    serviceMethods.GetPolicyInfoForPlayerAsync = function(self, player)
+        return {IsSubjectToChinaPolicies=false, ArePaidRandomItemsRestricted=false, IsPaidItemTradingAllowed=true, AreAdsAllowed=true, AllowedExternalLinkReferences={}}
+    end
+    -- AnalyticsService
+    serviceMethods.LogCustomEvent = function(self, player, eventName, customData) end
+    serviceMethods.LogEconomyEvent = function(self, player, flow, currencyType, amount, endingPlayerBalance, transactionType, itemSku) end
+    serviceMethods.LogFunnelStepEvent = function(self, player, funnelName, funnelSessionId, step, stepName) end
+    serviceMethods.LogOnboardingFunnelStepEvent = function(self, player, step, stepName) end
+    serviceMethods.LogProgressionCompleteEvent = function(self, player, progressionPathName, progressionName) end
+    serviceMethods.LogProgressionEvent = function(self, player, progressionPathName, progressionName, progressionIndex) end
+    -- Instance general
+    serviceMethods.GetNetworkOwner = function(self) return _at.localPlayer end
+    serviceMethods.SetNetworkOwner = function(self, player) end
+    serviceMethods.SetNetworkOwnershipAuto = function(self) end
+    serviceMethods.CanSetNetworkOwnership = function(self) return true, nil end
+    serviceMethods.GetNetworkOwnershipAuto = function(self) return true end
+    serviceMethods.ApplyDescription = function(self, humanoidDescription) end
+    serviceMethods.GetAppliedDescription = function(self) return createProxyObject("HumanoidDescription", false) end
+    serviceMethods.ReplaceContentIds = function(self, ids, newIds) end
+    serviceMethods.GetConnectedParts = function(self, recursive) return {} end
+    serviceMethods.GetJoints = function(self) return {} end
+    serviceMethods.GetTouchingParts = function(self) return {} end
+    serviceMethods.GetNoCollisionConstraints = function(self) return {} end
+    serviceMethods.SubtractAsync = function(self, parts, cs, ms) return createProxyObject("UnionOperation", false) end
+    serviceMethods.UnionAsync = function(self, parts, cs, ms) return createProxyObject("UnionOperation", false) end
+    serviceMethods.IntersectAsync = function(self, parts, cs, ms) return createProxyObject("IntersectOperation", false) end
+    serviceMethods.SeparateAsync = function(self, parts) return {} end
+    serviceMethods.BreakJoints = function(self) end
+    serviceMethods.MakeJoints = function(self) end
+    serviceMethods.ResetOrientationToIdentity = function(self) end
+    serviceMethods.GetRootPart = function(self) return proxy end
+    serviceMethods.GetModelCFrame = function(self) return CFrame.new(0,0,0) end
+    serviceMethods.GetModelSize = function(self) return Vector3.new(1,1,1) end
+    serviceMethods.FindPartOnRay = function(self, ray, ignore, terrainCells, ignoreWater) return nil, Vector3.new(0,0,0), Vector3.new(0,1,0), createProxyObject("Air", false) end
+    serviceMethods.FindPartOnRayWithIgnoreList = function(self, ray, ignoreList, terrainCells, ignoreWater) return nil, Vector3.new(0,0,0), Vector3.new(0,1,0), createProxyObject("Air", false) end
+    serviceMethods.FindPartOnRayWithWhitelist = function(self, ray, whitelist, ignoreWater) return nil, Vector3.new(0,0,0), Vector3.new(0,1,0), createProxyObject("Air", false) end
+    serviceMethods.ArePartsTouchingOthers = function(self, parts, overlapIgnored) return false end
+    serviceMethods.GetPartsInPart = function(self, part, overlapParams) return {} end
+    -- Humanoid extra
+    serviceMethods.AddAccessory = function(self, accessory) end
+    serviceMethods.RemoveAccessories = function(self) end
+    serviceMethods.GetAccessories = function(self) return {} end
+    serviceMethods.GetLimb = function(self, part) return createProxyObject("Enum.Limb.Unknown", false) end
+    serviceMethods.GetBodyPartR15 = function(self, part) return nil end
+    serviceMethods.ReplaceBodyPartR15 = function(self, bodyPart, part) return false end
+    serviceMethods.BuildRigFromAttachments = function(self) end
+    -- Sound extra
+    serviceMethods.Resume = function(self) end
+    -- Gui
+    serviceMethods.TweenPosition = function(self, endPosition, easingDirection, easingStyle, time, override, callback) return true end
+    serviceMethods.TweenSize = function(self, endSize, easingDirection, easingStyle, time, override, callback) return true end
+    serviceMethods.TweenSizeAndPosition = function(self, endSize, endPosition, easingDirection, easingStyle, time, override, callback) return true end
+    -- ContextActionService extra
+    serviceMethods.GetButton = function(self, actionName) return nil end
+    serviceMethods.LocalToolEquipped = function(self, toolEquipped) end
+    serviceMethods.LocalToolUnequipped = function(self, toolUnequipped) end
+    -- PathfindingService extra
+    serviceMethods.FindPathAsync = function(self, start, finish) return createProxyObject("Path", false) end
+    serviceMethods.ComputeAsync = function(self, start, finish) end
+    serviceMethods.GetWaypoints = function(self) return {} end
+    serviceMethods.CheckOcclusionAsync = function(self, start) return {} end
+    -- Camera extra
+    serviceMethods.ScreenPointToRay = function(self, x, y, depth) return Ray.new(Vector3.new(0,0,0), Vector3.new(0,0,-1)) end
+    serviceMethods.ViewportPointToRay = function(self, x, y, depth) return Ray.new(Vector3.new(0,0,0), Vector3.new(0,0,-1)) end
+    serviceMethods.WorldToScreenPoint = function(self, worldPoint) return Vector3.new(0,0,0), true end
+    serviceMethods.WorldToViewportPoint = function(self, worldPoint) return Vector3.new(0,0,0), true end
+    serviceMethods.GetPartsObscuringTarget = function(self, castPoints, ignoreList) return {} end
+    serviceMethods.Interpolate = function(self, endPos, endFocus, duration) end
+    -- UserInputService extra
+    serviceMethods.GetMouseLocation = function(self) return Vector2.new(0,0) end
+    serviceMethods.GetMouseDelta = function(self) return Vector2.new(0,0) end
+    serviceMethods.GetKeysPressed = function(self) return {} end
+    serviceMethods.GetMouseButtonsPressed = function(self) return {} end
+    serviceMethods.GetGamepadState = function(self, gamepadNum) return {} end
+    serviceMethods.GetSupportedGamepadKeyCodes = function(self, gamepadNum) return {} end
+    serviceMethods.GetConnectedGamepads = function(self) return {} end
+    serviceMethods.GetLastInputType = function(self) return createProxyObject("Enum.UserInputType.None", false) end
+    serviceMethods.GetFocusedTextBox = function(self) return nil end
+    serviceMethods.IsGamepadButtonDown = function(self, gamepadNum, keyCode) return false end
+    serviceMethods.IsKeyDown = function(self, keyCode) return false end
+    serviceMethods.IsMouseButtonPressed = function(self, mouseButton) return false end
+    serviceMethods.RecenterUserHeadCFrame = function(self) end
+    serviceMethods.GetDeviceRotation = function(self) return createProxyObject("InputObject", false), CFrame.new(0,0,0) end
+    serviceMethods.GetDeviceGravity = function(self) return createProxyObject("InputObject", false) end
+    -- PhysicsService
+    serviceMethods.CreateCollisionGroup = function(self, name) return 0 end
+    serviceMethods.RemoveCollisionGroup = function(self, name) end
+    serviceMethods.CollisionGroupSetCollidable = function(self, name1, name2, collidable) end
+    serviceMethods.CollisionGroupsAreCollidable = function(self, name1, name2) return true end
+    serviceMethods.GetCollisionGroupId = function(self, name) return 0 end
+    serviceMethods.GetCollisionGroupName = function(self, id) return "Default" end
+    serviceMethods.SetPartCollisionGroup = function(self, part, name) end
+    serviceMethods.GetMaxCollisionGroups = function(self) return 32 end
+    serviceMethods.GetRegisteredCollisionGroups = function(self) return {} end
+    -- StarterGui extra
+    serviceMethods.GetCoreGuiEnabled = function(self, coreGuiType) return true end
+    serviceMethods.RegisterGetCore = function(self, parameterName, getFunction) end
+    serviceMethods.RegisterSetCore = function(self, parameterName, setFunction) end
+    -- Lighting extra
+    serviceMethods.GetAtmosphere = function(self) return nil end
+    serviceMethods.GetSky = function(self) return nil end
+    -- Workspace extra
+    serviceMethods.GetServerTimeNow = function(self) return os.time() end
+    serviceMethods.PGSIsEnabled = function(self) return true end
+    serviceMethods.SetInsertPoint = function(self, point) end
+    -- NetworkClient/NetworkServer
+    serviceMethods.GetClientTicket = function(self) return "" end
+    -- ScriptContext
+    serviceMethods.AddCoreScriptLocal = function(self, name, parent) end
+    serviceMethods.GetCoreScriptVersion = function(self) return "1.0.0" end
+    meta.__namecall = function(self, ...) return nil end
+    meta.__index = function(tbl, key)
+        if key == proxyList or key == "__proxy_id" then
+            return rawget(tbl, key)
         end
-        if b4 == "ChildAdded" or b4 == "ChildRemoved" or b4 == "DescendantAdded" or b4 == "DescendantRemoving" then
-            local signal = bj(b4, false, bh)
-            t.registry[signal] = (t.registry[bh] or "object") .. "." .. b4
-            local mt = getmetatable(signal) or {}
-            mt.Connect = function(self, callback)
-                at(string.format("%s:Connect(function(child)", t.registry[signal]))
-                t.indent = t.indent + 1
-                if type(callback) == "function" then
-                    local fakeChild = bj("child", false)
-                    aW(fakeChild, "child")
-                    pcall(callback, fakeChild)
+        -- fast path: string key, check property_store and common properties before formatValue
+        if typeFunction(key) == "string" then
+            local ps = dumperState.property_store[proxy]
+            if ps then
+                local v = ps[key]
+                if v ~= nil then return v end
+            end
+            if key == "PlaceId" or key == "placeId" then return numericArg end
+            if key == "GameId" or key == "gameId" then return numericArg + 864197532 end
+            if key == "Parent" then return dumperState.parent_map[proxy] end
+            if key == "Name" then
+                if _at.typeOverride[proxy] == "EnumItem" then
+                    return (formattedName or ""):match("%.([^%.]+)$") or formattedName or "Object"
                 end
-                t.indent = t.indent - 1
-                at("end)")
-                local conn = bj("connection", false)
-                aW(conn, "conn")
-                return conn
+                return formattedName or "Object"
             end
-            setmetatable(signal, mt)
-            return signal
-        end
-        if b4 == "JumpRequest" then
-            local signal = bj("JumpRequest", false, bh)
-            t.registry[signal] = (t.registry[bh] or "UserInputService") .. ".JumpRequest"
-            local mt = getmetatable(signal) or {}
-            mt.Connect = function(self, callback)
-                at("UserInputService.JumpRequest:Connect(function()")
-                t.indent = t.indent + 1
-                if type(callback) == "function" then
-                    pcall(callback)
+            if key == "ClassName" then return formattedName or "Instance" end
+            if not _at.metaHooks["__index"] then
+                local sm = serviceMethods[key]
+                if sm ~= nil then
+                    if typeFunction(sm) == "function" then
+                        local previousMethod
+                        return function(_, ...)
+                            previousMethod = _at.currentNamecallMethod
+                            _at.currentNamecallMethod = key
+                            local results = {sm(proxy, ...)}
+                            _at.currentNamecallMethod = previousMethod
+                            return table.unpack(results)
+                        end
+                    end
+                    return sm
                 end
-                t.indent = t.indent - 1
-                at("end)")
-                local conn = bj("connection", false)
-                aW(conn, "conn")
-                return conn
             end
-            setmetatable(signal, mt)
-            return signal
         end
-        if b4 == "CharacterAdded" or b4 == "CharacterRemoving" then
-            local signal = bj(b4, false, bh)
-            t.registry[signal] = (t.registry[bh] or "Players.LocalPlayer") .. "." .. b4
-            local mt = getmetatable(signal) or {}
-            mt.Connect = function(self, callback)
-                at(string.format("%s:Connect(function(character)", t.registry[signal]))
-                t.indent = t.indent + 1
-                if type(callback) == "function" then
-                    local fakeChar = bj("Character", false)
-                    aW(fakeChar, "character")
-                    pcall(callback, fakeChar)
+        local pathName = dumperState.registry[proxy] or formattedName or "object"
+        local propertyName = formatValue(key)
+        if _at.metaHooks["__index"] and not _at.inMetaHook then
+            _at.inMetaHook = true
+            local ok, result = pcallFunction(_at.metaHooks["__index"], proxy, key)
+            _at.inMetaHook = false
+            if ok and result ~= nil then return result end
+        end
+        if key == "PlaceId" or key == "placeId" then return numericArg end
+        if key == "GameId" or key == "gameId" then return numericArg + 864197532 end
+        if key == "Parent" then return dumperState.parent_map[proxy] end
+        -- DistributedGameTime ticking (must be before property_store read)
+        if key == "DistributedGameTime" then
+            if not _at._dgtClock then
+                -- initialize ticking from current stored value on first access
+                local props = dumperState.property_store[proxy]
+                _at._dgtBase = (props and props[key]) or 1
+                _at._dgtClock = osLibrary.clock()
+            end
+            return _at._dgtBase + (osLibrary.clock() - _at._dgtClock)
+        end
+        -- AT6: SurfaceAppearance ContentId properties
+        local className = dumperState.property_store[proxy] and dumperState.property_store[proxy].ClassName
+        if className == "SurfaceAppearance" and (key == "ColorMap" or key == "NormalMap" or key == "RoughnessMap" or key == "MetalnessMap") then
+            return _makeContentId("")
+        end
+        if dumperState.property_store[proxy] and dumperState.property_store[proxy][key] ~= nil then
+            return dumperState.property_store[proxy][key]
+        end
+        if serviceMethods[propertyName] then
+            return function(_, ...)
+                if _at.metaHooks["__namecall"] and not _at.inMetaHook then
+                    local previousMethod = _at.currentNamecallMethod
+                    _at.currentNamecallMethod = propertyName
+                    _at.inMetaHook = true
+                    local ok, result = pcallFunction(_at.metaHooks["__namecall"], proxy, ...)
+                    _at.inMetaHook = false
+                    _at.currentNamecallMethod = previousMethod
+                    if ok and result ~= nil then return result end
                 end
-                t.indent = t.indent - 1
-                at("end)")
-                local conn = bj("connection", false)
-                aW(conn, "conn")
-                return conn
+                local previousMethod = _at.currentNamecallMethod
+                _at.currentNamecallMethod = propertyName
+                local results = {serviceMethods[propertyName](proxy, ...)}
+                _at.currentNamecallMethod = previousMethod
+                return table.unpack(results)
             end
-            setmetatable(signal, mt)
-            return signal
         end
-        local bS = t.registry[bh] or aT or "object"
-        local cP = aE(b4)
-        if t.property_store[bh] and t.property_store[bh][b4] ~= nil then
-            return t.property_store[bh][b4]
+        if pathName:match("^Enum") then
+            if propertyName == "Value" then
+                local enumValues = {
+                    ["Enum.Material.Plastic"]=256,["Enum.Material.SmoothPlastic"]=272,
+                    ["Enum.Material.Neon"]=288,["Enum.Material.Wood"]=512,
+                    ["Enum.Material.Metal"]=768,["Enum.Material.Glass"]=1568,
+                    ["Enum.NormalId.Front"]=5,["Enum.NormalId.Back"]=2,
+                    ["Enum.NormalId.Left"]=3,["Enum.NormalId.Right"]=0,
+                    ["Enum.NormalId.Top"]=1,["Enum.NormalId.Bottom"]=4,
+                    ["Enum.KeyCode.Unknown"]=0,["Enum.KeyCode.Return"]=13,
+                    ["Enum.KeyCode.Space"]=32,["Enum.KeyCode.E"]=69,
+                    ["Enum.Font.GothamBold"]=11,["Enum.Font.Gotham"]=4,
+                    ["Enum.MembershipType.None"]=0,["Enum.MembershipType.Premium"]=4,
+                    ["Enum.ActionType.Nothing"]=0,["Enum.ActionType.Pause"]=1,["Enum.ActionType.Lose"]=2,["Enum.ActionType.Draw"]=3,["Enum.ActionType.Win"]=4,
+                    ["Enum.ConnectionError.OK"]=0,["Enum.ConnectionError.Unknown"]=1,["Enum.ConnectionError.ConnectErrors"]=2,["Enum.ConnectionError.Disconnect"]=3,["Enum.ConnectionError.Unauthorized"]=4,["Enum.ConnectionError.NotFound"]=5,["Enum.ConnectionError.Forbidden"]=6,["Enum.ConnectionError.TooManyRequests"]=7,["Enum.ConnectionError.ServiceUnavailable"]=8,["Enum.ConnectionError.GatewayTimeout"]=9,
+                    ["Enum.VelocityConstraintMode.Vector"]=0,["Enum.VelocityConstraintMode.Plane"]=1,["Enum.VelocityConstraintMode.Line"]=2,
+                }
+                return enumValues[pathName] or 0
+            end
+            if propertyName == "Name" then return pathName:match("%.([^%.]+)$") or pathName end
+            if propertyName == "EnumType" then
+                local et = pathName:match("^(Enum%.[^%.]+)") or "Enum"
+                return _at.enum[et] or createProxyObject(et, false)
+            end
+            local fullEnum = pathName .. "." .. propertyName
+            if not _at.enum[fullEnum] then
+                local enumProxy = createProxyObject(fullEnum, false)
+                dumperState.registry[enumProxy] = fullEnum
+                _at.typeOverride[enumProxy] = "EnumItem"
+                _at.enum[fullEnum] = enumProxy
+            end
+            return _at.enum[fullEnum]
         end
-        if bP[cP] then
-            local cQ, cR = bg()
-            t.registry[cQ] = bS .. "." .. cP
-            cR.__call = function(W, ...)
-                local bA = {...}
-                if bA[1] == bh or (G(bA[1]) and bA[1] ~= cQ) then
-                    table.remove(bA, 1)
-                end
-                return bP[cP](bh, table.unpack(bA))
-            end
-            cR.__index = function(W, cS)
-                if cS == F or cS == "__proxy_id" then
-                    return rawget(cQ, cS)
-                end
-                return bj(cS, false, cQ)
-            end
-            cR.__tostring = function()
-                return bS .. ":" .. cP
-            end
-            return cQ
-        end
-        if bS == "fenv" or bS == "getgenv" or bS == "_G" then
-            if b4 == "game" then
-                return game
-            end
-            if b4 == "workspace" then
-                return workspace
-            end
-            if b4 == "Gravity" then
-                return 196.2
-            end
-            if b4 == "script" then
-                return script
-            end
-            if b4 == "Enum" then
-                return Enum
-            end
-            if _G[b4] ~= nil then
-                return _G[b4]
-            end
+        if pathName == "fenv" or pathName == "getgenv" or pathName == "_G" then
+            if key == "game" then return game end
+            if key == "workspace" then return workspace end
+            if key == "script" then return script end
+            if key == "Enum" then return Enum end
+            if _G[key] ~= nil then return _G[key] end
             return nil
         end
-        if b4 == "EnumType" then
-            local enum_name = t.registry[bh]:match("(Enum%.[^.]+)%.")
-            if enum_name then
-                return rawget(_G, enum_name) or Enum
+        if key == "Name" then return formattedName or "Object" end
+        if key == "ClassName" then return formattedName or "Instance" end
+        if key == "Players" then return serviceMethods.GetService(game, "Players") end
+        if key == "Workspace" then return workspace end
+        if key == "LocalPlayer" then
+            if _at.localPlayer then return _at.localPlayer end
+            local lpProxy = createProxyObject("LocalPlayer", false, proxy)
+            dumperState.property_store[lpProxy] = {Name = "Player", ClassName = "Player", UserId = 1}
+            _at.localPlayer = lpProxy
+            local varName = registerVariable(lpProxy, "LocalPlayer")
+            emitOutput(string.format("local %s = %s.LocalPlayer", varName, pathName))
+            return lpProxy
+        end
+        if key == "PlayerGui" then return createProxyObject("PlayerGui", false, proxy) end
+        if key == "Backpack" then return createProxyObject("Backpack", false, proxy) end
+        if key == "PlayerScripts" then return createProxyObject("PlayerScripts", false, proxy) end
+        if key == "UserId" then return 1 end
+        if key == "DisplayName" then return "Player" end
+        if key == "AccountAge" then return 1000 end
+        if key == "LocaleId" then return "en-us" end
+        if key == "RobloxLocaleId" or key == "SystemLocaleId" then return "en-us" end
+        if key == "CharacterMaxSlopeAngle" then return 89 end
+        if key == "DistanceFactor" then return 3.33 end
+        if key == "CaptureBegan" then
+            local sigProxy = createProxyObject(pathName .. ".CaptureBegan", false, proxy)
+            dumperState.registry[sigProxy] = pathName .. ".CaptureBegan"
+            _at.typeOverride[sigProxy] = "RBXScriptSignal"
+            return sigProxy
+        end
+        if key == "Connected" and _at.connState[proxy] ~= nil then return _at.connState[proxy] end
+        if key == "Team" then return createProxyObject("Team", false, proxy) end
+        if key == "TeamColor" then return BrickColor.new("White") end
+        if key == "Character" then
+            local charProxy = createProxyObject("Character", false, proxy)
+            dumperState.property_store[charProxy] = {Name = "Character", ClassName = "Model"}
+            -- AT3: seed Animate LocalScript as child of character
+            if not _at.animateScript then
+                local animProxy = createProxyObject("Animate", false, charProxy)
+                dumperState.registry[animProxy] = "Animate"
+                dumperState.property_store[animProxy] = {Name = "Animate", ClassName = "LocalScript", Parent = charProxy}
+                _setParent(animProxy, charProxy)
+                _at.animateScript = animProxy
             end
-            return Enum
+            return charProxy
         end
-        if b4 == "Parent" then
-            return t.parent_map[bh] or bj("Parent", false)
+        if key == "Humanoid" then
+            local humProxy = createProxyObject("Humanoid", false, proxy)
+            dumperState.property_store[humProxy] = {Health = 100, MaxHealth = 100, WalkSpeed = 16, JumpPower = 50, JumpHeight = 7.2}
+            return humProxy
         end
-        if b4 == "Name" then
-            return aT or "Object"
+        if key == "HumanoidRootPart" or key == "PrimaryPart" or key == "RootPart" then
+            local rootProxy = createProxyObject("HumanoidRootPart", false, proxy)
+            dumperState.property_store[rootProxy] = {Position = Vector3.new(0, 5, 0), CFrame = CFrame.new(0, 5, 0)}
+            return rootProxy
         end
-        if b4 == "ClassName" then
-            return aT or "Instance"
+        local limbNames = {"Head", "Torso", "UpperTorso", "LowerTorso", "RightArm", "LeftArm", "RightLeg", "LeftLeg", "RightHand", "LeftHand", "RightFoot", "LeftFoot"}
+        for _, limb in ipairsFunction(limbNames) do
+            if key == limb then return createProxyObject(key, false, proxy) end
         end
-        if b4 == "LocalPlayer" then
-            local cT = bj("LocalPlayer", false, bh)
-            local _ = aW(cT, "LocalPlayer")
-            at(string.format("local %s = %s.LocalPlayer", _, bS))
-            return cT
+        if key == "Animator" then return createProxyObject("Animator", false, proxy) end
+        if key == "CurrentCamera" or key == "Camera" then
+            local camProxy = createProxyObject("Camera", false, proxy)
+            dumperState.property_store[camProxy] = {CFrame = CFrame.new(0, 10, 0), FieldOfView = 70, ViewportSize = Vector2.new(1920, 1080)}
+            return camProxy
         end
-        if b4 == "MembershipType" then
-            local mt = bj("Enum.MembershipType.None", false)
-            t.registry[mt] = "Enum.MembershipType.None"
-            if not t.property_store[mt] then
-                t.property_store[mt] = {}
+        if key == "Terrain" then
+            if not _at.terrainProxy then
+                local tp = createProxyObject("Terrain", false, proxy)
+                dumperState.property_store[tp] = {ClassName="Terrain",Name="Terrain",Parent=proxy,WaterWaveSpeed=100,WaterWaveSize=0.5}
+                _at.terrainProxy = tp
             end
-            t.property_store[mt].Name = "None"
-            t.property_store[mt].Value = 0
-            return mt
+            return _at.terrainProxy
         end
-        if b4 == "PlayerGui" then
-            return bj("PlayerGui", false, bh)
+        if key == "CameraType" then return Enum.CameraType.Custom end
+        if key == "CameraSubject" then return createProxyObject("Humanoid", false, proxy) end
+        if key == "DistributedGameTime" then
+            if _at._dgtBase and _at._dgtClock then
+                return _at._dgtBase + (osLibrary.clock() - _at._dgtClock)
+            end
         end
-        if b4 == "Backpack" then
-            return bj("Backpack", false, bh)
-        end
-        if b4 == "PlayerScripts" then
-            return bj("PlayerScripts", false, bh)
-        end
-        if b4 == "UserId" then
-            return 1262536232
-        end
-        if b4 == "DisplayName" then
-            return "Evade12276"
-        end
-        if b4 == "AccountAge" then
-            return 1156
-        end
-        if b4 == "Team" then
-            return bj("Team", true, bh)
-        end
-        if b4 == "TeamColor" then
-            return BrickColor.new("White")
-        end
-        if b4 == "Character" then
-            return bj("Character", true, bh)
-        end
-        if b4 == "Humanoid" then
-            local cU = bj("Humanoid", true, bh)
-            t.property_store[cU] = {Health = 100, MaxHealth = 100, WalkSpeed = 16, JumpPower = 50, JumpHeight = 7.2}
-            return cU
-        end
-        if b4 == "HumanoidRootPart" or b4 == "PrimaryPart" or b4 == "RootPart" then
-            local cV = bj("HumanoidRootPart", false, bh)
-            t.property_store[cV] = {Position = Vector3.new(0, 0, 0), CFrame = CFrame.new(0, 5, 0)}
-            return cV
-        end
-        local cW = {
-            "Head", "Torso", "UpperTorso", "LowerTorso", "RightArm", "LeftArm",
-            "RightLeg", "LeftLeg", "RightHand", "LeftHand", "RightFoot", "LeftFoot"
+        local constants = {
+            Health = 100, MaxHealth = 100, WalkSpeed = 16, JumpPower = 50, JumpHeight = 7.2, HipHeight = 2,
+            Transparency = 0, Mass = 1, Value = 0, TimePosition = 0, TimeLength = 1, Volume = 0.5,
+            PlaybackSpeed = 1, Brightness = 1, Range = 60, Angle = 90, FieldOfView = 70, Thickness = 1,
+            ZIndex = 1, LayoutOrder = 0, Gravity = 196.2, DistributedGameTime = 1, ClockTime = 14,
+            FogEnd = 100000, RolloffScale = 1, MaxPlayers = 12, RespawnTime = 5, PlaceVersion = 1,
+            CreatorId = 0, FollowUserId = 0, NearPlaneZ = -0.1
         }
-        for W, cr in ipairs(cW) do
-            if b4 == cr then
-                return bj(b4, false, bh)
-            end
-        end
-        if b4 == "Animator" then
-            return bj("Animator", false, bh)
-        end
-        if b4 == "CurrentCamera" or b4 == "Camera" then
-            local cX = bj("Camera", false, bh)
-            t.property_store[cX] = {
-                CFrame = CFrame.new(0, 10, 0),
-                FieldOfView = 70,
-                ViewportSize = Vector2.new(1920, 1080)
-            }
-            return cX
-        end
-        if bS == "Camera" then
-            if b4 == "ViewportSize" then
-                return Vector2.new(1920, 1080)
-            end
-            if b4 == "ViewportSize.X" then
-                return 1920
-            end
-            if b4 == "ViewportSize.Y" then
-                return 1080
-            end
-        end
-        if b4 == "Ambient" then
-            local ambientVal = Color3.new(0.5, 0.5, 0.5)
-            if t.property_store[bh] and t.property_store[bh].Ambient then
-                ambientVal = t.property_store[bh].Ambient
-            end
-            return ambientVal
-        end
-        if b4 == "FogEnd" then
-            if t.property_store[bh] and t.property_store[bh].FogEnd then
-                return t.property_store[bh].FogEnd
-            end
-            return 100000
-        end
-        if b4 == "FogStart" then
-            if t.property_store[bh] and t.property_store[bh].FogStart then
-                return t.property_store[bh].FogStart
-            end
-            return 0
-        end
-        if b4 == "FogColor" then
-            if t.property_store[bh] and t.property_store[bh].FogColor then
-                return t.property_store[bh].FogColor
-            end
-            return Color3.new(0.5, 0.5, 0.5)
-        end
-        if b4 == "OutdoorAmbient" then
-            return Color3.new(0.5, 0.5, 0.5)
-        end
-        if b4 == "ColorShift_Top" then
-            return Color3.new(0, 0, 0)
-        end
-        if b4 == "ColorShift_Bottom" then
-            return Color3.new(0, 0, 0)
-        end
-        if b4 == "GlobalShadows" then
-            return true
-        end
-        if b4 == "ClockTime" then
-            return 14
-        end
-        if b4 == "GeographicLatitude" then
-            return 41.9
-        end
-        if b4 == "CameraType" then
-            return bj("Enum.CameraType.Custom", false)
-        end
-        if b4 == "CameraSubject" then
-            return bj("Humanoid", false, bh)
-        end
-        local cY = {
-            Health = 100, MaxHealth = 100, WalkSpeed = 16, JumpPower = 50,
-            JumpHeight = 7.2, HipHeight = 2, Transparency = 0, Mass = 1,
-            Value = 0, TimePosition = 0, TimeLength = 1, Volume = 0.5,
-            PlaybackSpeed = 1, Brightness = 1, Range = 60, Angle = 90,
-            FieldOfView = 70, Size = 1, Thickness = 1, ZIndex = 1,
-            LayoutOrder = 0, Ambient = Color3.new(0.5, 0.5, 0.5),
-            FogEnd = 100000, FogStart = 0, FogColor = Color3.new(0.5, 0.5, 0.5),
-        }
-        if cY[b4] then
-            return bl(cY[b4])
-        end
-        local cZ = {
-            Visible = true, Enabled = true, Anchored = false, CanCollide = true,
-            Locked = false, Active = true, Draggable = false, Modal = false,
-            Playing = false, Looped = false, IsPlaying = false, AutoPlay = false,
-            Archivable = true, ClipsDescendants = false, RichText = false,
-            TextWrapped = false, TextScaled = false, PlatformStand = false,
-            AutoRotate = true, Sit = false
-        }
-        if cZ[b4] ~= nil then
-            return cZ[b4]
-        end
-        if b4 == "AbsoluteSize" or b4 == "ViewportSize" then
-            return Vector2.new(1920, 1080)
-        end
-        if b4 == "AbsolutePosition" then
-            return Vector2.new(0, 0)
-        end
-        if b4 == "Position" then
-            if aT and (aT:match("Part") or aT:match("Model") or aT:match("Character") or aT:match("Root")) then
-                return Vector3.new(0, 5, 0)
-            end
+        if constants[key] ~= nil then return constants[key] end
+        if key == "Size" and not (formattedName and formattedName:match("Part")) then return UDim2.new(1, 0, 1, 0) end
+        local boolConstants = {Visible = true, Enabled = true, Anchored = false, CanCollide = true, Locked = false, Active = true, Draggable = false, Modal = false, Playing = false, Looped = false, IsPlaying = false, AutoPlay = false, Archivable = true, ClipsDescendants = false, RichText = false, TextWrapped = false, TextScaled = false, PlatformStand = false, AutoRotate = true, Sit = false}
+        boolConstants.StreamingEnabled = false
+        boolConstants.HttpEnabled = false
+        boolConstants.Sandboxed = false
+        if boolConstants[key] ~= nil then return boolConstants[key] end
+        if key == "JobId" then return "00000000-0000-4000-8000-000000000001" end
+        if key == "CreatorType" then return Enum.CreatorType.User end
+        if key == "MembershipType" then return Enum.MembershipType.None end
+        if key == "AmbientReverb" then return Enum.ReverbType.NoReverb end
+        if key == "Ambient" or key == "OutdoorAmbient" then return Color3.fromRGB(128, 128, 128) end
+        if key == "UniqueId" then return _getDebugId(proxy) end
+        if key == "AbsoluteSize" or key == "ViewportSize" then return Vector2.new(1920, 1080) end
+        if key == "AbsolutePosition" then return Vector2.new(0, 0) end
+        if key == "Position" then
+            if formattedName and (formattedName:match("Part") or formattedName:match("Model") or formattedName:match("Character") or formattedName:match("Root")) then return Vector3.new(0, 5, 0) end
             return UDim2.new(0, 0, 0, 0)
         end
-        if b4 == "Size" then
-            if aT and aT:match("Part") then
-                return Vector3.new(4, 1, 2)
-            end
+        if key == "Size" then
+            if formattedName and formattedName:match("Part") then return Vector3.new(4, 1, 2) end
             return UDim2.new(1, 0, 1, 0)
         end
-        if b4 == "CFrame" then
-            return CFrame.new(0, 5, 0)
-        end
-        if b4 == "Velocity" or b4 == "AssemblyLinearVelocity" then
-            local velProxy = bj("Vector3", false)
-            t.registry[velProxy] = (t.registry[bh] or "part") .. ".Velocity"
-            local velMt = getmetatable(velProxy) or {}
-            velMt.__index = function(self, key)
-                if key == "X" then return 0
-                elseif key == "Y" then return 0
-                elseif key == "Z" then return 0 end
-                return nil
+        if key == "CFrame" then return CFrame.new(0, 5, 0) end
+        if key == "Velocity" or key == "AssemblyLinearVelocity" then
+            -- AT4: if a LinearVelocity constraint is attached to this part, reflect its VectorVelocity
+            for _, child in ipairsFunction(_at.children[proxy] or {}) do
+                local cprops = dumperState.property_store[child]
+                if cprops and cprops.ClassName == "LinearVelocity" then
+                    local vv = cprops.VectorVelocity
+                    if vv and typeof(vv) == "Vector3" then return vv end
+                end
             end
-            velMt.__newindex = function(self, key, value)
-                at(string.format("%s.Velocity.%s = %s", t.registry[bh] or "part", key, aZ(value)))
-            end
-            setmetatable(velProxy, velMt)
-            return velProxy
-        end
-        if b4 == "RotVelocity" or b4 == "AssemblyAngularVelocity" then
             return Vector3.new(0, 0, 0)
         end
-        if b4 == "Orientation" or b4 == "Rotation" then
-            return Vector3.new(0, 0, 0)
-        end
-        if b4 == "LookVector" then
-            return Vector3.new(0, 0, -1)
-        end
-        if b4 == "RightVector" then
-            return Vector3.new(1, 0, 0)
-        end
-        if b4 == "UpVector" then
-            return Vector3.new(0, 1, 0)
-        end
-        if b4 == "Color" or b4 == "Color3" or b4 == "BackgroundColor3" or b4 == "BorderColor3" or 
-           b4 == "TextColor3" or b4 == "PlaceholderColor3" or b4 == "ImageColor3" then
-            return Color3.new(1, 1, 1)
-        end
-        if b4 == "BrickColor" then
-            return BrickColor.new("Medium stone grey")
-        end
-        if b4 == "Material" then
-            return bj("Enum.Material.Plastic", false)
-        end
-        if b4 == "Hit" then
-            return CFrame.new(0, 0, -10)
-        end
-        if b4 == "Origin" then
-            return CFrame.new(0, 5, 0)
-        end
-        if b4 == "Target" then
-            return bj("Target", false, bh)
-        end
-        if b4 == "X" or b4 == "Y" then
-            return 0
-        end
-        if b4 == "UnitRay" then
-            return Ray.new(Vector3.new(0, 5, 0), Vector3.new(0, 0, -1))
-        end
-        if b4 == "ViewSizeX" then
-            return 1920
-        end
-        if b4 == "ViewSizeY" then
-            return 1080
-        end
-        if b4 == "Text" or b4 == "PlaceholderText" or b4 == "ContentText" or b4 == "Value" then
-            if s then
-                return s
+        if key == "RotVelocity" or key == "AssemblyAngularVelocity" then
+            local imp = dumperState.property_store[proxy] and dumperState.property_store[proxy]["_angularImpulse"]
+            if imp and _at.vectors[imp] then
+                local d = _at.vectors[imp]
+                return _makeVector3(d.x, d.y, d.z)
             end
-            if b4 == "Value" then
-                return "input"
+            return _makeVector3(0, 0, 0)
+        end
+        if key == "Orientation" or key == "Rotation" then return Vector3.new(0, 0, 0) end
+        if key == "LookVector" then return Vector3.new(0, 0, -1) end
+        if key == "RightVector" then return Vector3.new(1, 0, 0) end
+        if key == "UpVector" then return Vector3.new(0, 1, 0) end
+        if key == "Color" or key == "Color3" or key == "BackgroundColor3" or key == "BorderColor3" or key == "TextColor3" or key == "PlaceholderColor3" or key == "ImageColor3" then return Color3.new(1, 1, 1) end
+        if key == "BrickColor" then return BrickColor.new("Medium stone grey") end
+        if key == "Material" then return createProxyObject("Enum.Material.Plastic", false) end
+        if key == "Hit" then return CFrame.new(0, 0, -10) end
+        if key == "Origin" then return CFrame.new(0, 5, 0) end
+        if key == "Target" then return createProxyObject("Target", false, proxy) end
+        if key == "X" or key == "Y" then return 0 end
+        if key == "UnitRay" then return Ray.new(Vector3.new(0, 5, 0), Vector3.new(0, 0, -1)) end
+        if key == "ViewSizeX" then return 1920 end
+        if key == "ViewSizeY" then return 1080 end
+        if key == "Text" or key == "PlaceholderText" or key == "ContentText" or key == "Value" then
+            if inputKey then return inputKey end
+            if key == "Value" then return "input" end
+            return '"'
+        end
+        if key == "TextBounds" then return Vector2.new(0, 0) end
+        if key == "Font" then return createProxyObject("Enum.Font.SourceSans", false) end
+        if key == "TextSize" then return 14 end
+        if key == "Image" or key == "ImageContent" then return '"' end
+        if pathName:match("^Enum") then
+            if propertyName == "Value" then
+                local enumValues = {
+                    ["Enum.Material.Plastic"]=256,["Enum.Material.SmoothPlastic"]=272,
+                    ["Enum.Material.Neon"]=288,["Enum.Material.Wood"]=512,
+                    ["Enum.Material.Metal"]=768,["Enum.Material.Glass"]=1568,
+                    ["Enum.NormalId.Front"]=5,["Enum.NormalId.Back"]=2,
+                    ["Enum.NormalId.Left"]=3,["Enum.NormalId.Right"]=0,
+                    ["Enum.NormalId.Top"]=1,["Enum.NormalId.Bottom"]=4,
+                    ["Enum.KeyCode.Unknown"]=0,["Enum.KeyCode.Return"]=13,
+                    ["Enum.KeyCode.Space"]=32,["Enum.KeyCode.E"]=69,
+                    ["Enum.Font.GothamBold"]=11,["Enum.Font.Gotham"]=4,
+                    ["Enum.MembershipType.None"]=0,["Enum.MembershipType.Premium"]=4,
+                    ["Enum.ActionType.Nothing"]=0,["Enum.ActionType.Pause"]=1,["Enum.ActionType.Lose"]=2,["Enum.ActionType.Draw"]=3,["Enum.ActionType.Win"]=4,
+                    ["Enum.ConnectionError.OK"]=0,["Enum.ConnectionError.Unknown"]=1,["Enum.ConnectionError.ConnectErrors"]=2,["Enum.ConnectionError.Disconnect"]=3,["Enum.ConnectionError.Unauthorized"]=4,["Enum.ConnectionError.NotFound"]=5,["Enum.ConnectionError.Forbidden"]=6,["Enum.ConnectionError.TooManyRequests"]=7,["Enum.ConnectionError.ServiceUnavailable"]=8,["Enum.ConnectionError.GatewayTimeout"]=9,
+                    ["Enum.VelocityConstraintMode.Vector"]=0,["Enum.VelocityConstraintMode.Plane"]=1,["Enum.VelocityConstraintMode.Line"]=2,
+                }
+                return enumValues[pathName] or 0
             end
-            return ""
+            if propertyName == "Name" then return pathName:match("%.([^%.]+)$") or pathName end
+            if propertyName == "EnumType" then
+                local et = pathName:match("^(Enum%.[^%.]+)") or "Enum"
+                return _at.enum[et] or createProxyObject(et, false)
+            end
+            local fullEnum = pathName .. "." .. propertyName
+            if not _at.enum[fullEnum] then
+                local enumProxy = createProxyObject(fullEnum, false)
+                dumperState.registry[enumProxy] = fullEnum
+                _at.typeOverride[enumProxy] = "EnumItem"
+                _at.enum[fullEnum] = enumProxy
+            end
+            return _at.enum[fullEnum]
         end
-        if b4 == "TextBounds" then
-            return Vector2.new(0, 0)
+        local signalNames = {"Changed", "ChildAdded", "ChildRemoved", "DescendantAdded", "DescendantRemoving", "Touched", "TouchEnded", "InputBegan", "InputEnded", "InputChanged", "MouseButton1Click", "MouseButton1Down", "MouseButton1Up", "MouseButton2Click", "MouseButton2Down", "MouseButton2Up", "MouseEnter", "MouseLeave", "MouseMoved", "MouseWheelForward", "MouseWheelBackward", "Activated", "Deactivated", "FocusLost", "FocusGained", "Focused", "Heartbeat", "RenderStepped", "Stepped", "CharacterAdded", "CharacterRemoving", "CharacterAppearanceLoaded", "PlayerAdded", "PlayerRemoving", "AncestryChanged", "AttributeChanged", "Died", "FreeFalling", "GettingUp", "Jumping", "Running", "Seated", "Swimming", "StateChanged", "HealthChanged", "MoveToFinished", "OnClientEvent", "OnServerEvent", "OnClientInvoke", "OnServerInvoke", "Completed", "DidLoop", "Stopped", "CaptureBegan", "Button1Down", "Button1Up", "Button2Down", "Button2Up", "Idle", "Move", "TextChanged", "ReturnPressedFromOnScreenKeyboard", "Triggered", "TriggerEnded", "Error", "Event", "AxisChanged", "JumpRequest", "DevTouchMovementModeChanged", "DevComputerMovementModeChanged", "GraphicsQualityChangeRequest", "MenuOpened", "MenuClosed", "PointerAction", "TouchStarted", "TouchMoved", "TouchEnded", "TouchTap", "TouchLongPress", "TouchPinch", "TouchRotate", "TouchSwipe", "GamepadConnected", "GamepadDisconnected", "WindowFocused", "WindowFocusReleased"}
+        for _, sig in ipairsFunction(signalNames) do
+            if key == sig then
+                local sigProxy = createProxyObject(pathName .. "." .. key, false, nil)
+                dumperState.registry[sigProxy] = pathName .. "." .. key
+                _at.typeOverride[sigProxy] = "RBXScriptSignal"
+                _at.signalOwner = _at.signalOwner or {}
+                _at.signalOwner[sigProxy] = proxy  -- track owner without triggering _setParent
+                return sigProxy
+            end
         end
-        if b4 == "Font" then
-            return bj("Enum.Font.SourceSans", false)
+        return createProxyMethod(propertyName, proxy)
+    end
+    meta.__newindex = function(tbl, key, val)
+        if key == proxyList or key == "__proxy_id" then
+            rawset(tbl, key, val)
+            return
         end
-        if b4 == "TextSize" then
-            return 14
-        end
-        if b4 == "Image" or b4 == "ImageContent" then
-            return ""
-        end
-        local c_ = {
-            "Changed", "ChildAdded", "ChildRemoved", "DescendantAdded", "DescendantRemoving",
-            "Touched", "TouchEnded", "InputBegan", "InputEnded", "InputChanged",
-            "MouseButton1Click", "MouseButton1Down", "MouseButton1Up", "MouseButton2Click",
-            "MouseButton2Down", "MouseButton2Up", "MouseEnter", "MouseLeave", "MouseMoved",
-            "MouseWheelForward", "MouseWheelBackward", "Activated", "Deactivated", "FocusLost",
-            "FocusGained", "Focused", "Heartbeat", "RenderStepped", "Stepped", "CharacterAdded",
-            "CharacterRemoving", "CharacterAppearanceLoaded", "PlayerAdded", "PlayerRemoving",
-            "AncestryChanged", "AttributeChanged", "Died", "FreeFalling", "GettingUp", "Jumping",
-            "Running", "Seated", "Swimming", "StateChanged", "HealthChanged", "MoveToFinished",
-            "OnClientEvent", "OnServerEvent", "OnClientInvoke", "OnServerInvoke", "Completed",
-            "DidLoop", "Stopped", "Button1Down", "Button1Up", "Button2Down", "Button2Up",
-            "Idle", "Move", "TextChanged", "ReturnPressedFromOnScreenKeyboard", "Triggered", "TriggerEnded"
+        -- locked: never allow mutation regardless of method
+        local _lockedProps = {PlaceId=true, placeId=true, GameId=true, gameId=true, UniverseId=true}
+        if _lockedProps[key] then return end
+        -- read-only properties: error like real Roblox does
+        local _readOnlyProps = {
+            PlaybackLoudness = true,
+            AbsolutePosition = true,
+            AbsoluteSize = true,
+            AbsoluteRotation = true,
+            TextBounds = true,
+            ContentText = true,
+            SimulationRadius = true,
+            MaxSimulationRadius = true,
+            RootPriority = true,
+            NativeIndex = true,
+            ReceiveAge = true,
+            AssemblyAngularVelocity = true,
+            AssemblyLinearVelocity = true,
+            AssemblyMass = true,
+            AssemblyRootPart = true,
+            CurrentCamera = true,
+            PrivateServerOwnerId = true,
+            PrivateServerId = true,
+            JobId = true,
+            PlaceId = true,
+            GameId = true,
+            PlaceVersion = true,
+            UserId = true,
+            FloorMaterial = true,
+            MoveDirection = true,
+            SeatPart = true,
         }
-        for W, d0 in ipairs(c_) do
-            if b4 == d0 then
-                local cg = bj(bS .. "." .. b4, false, bh)
-                t.registry[cg] = bS .. "." .. b4
-                return cg
-            end
+        if _readOnlyProps[key] then
+            errorFunction(toStringFunction(key) .. " is not a valid member of " .. (dumperState.registry[proxy] or formattedName or "Instance"), 2)
         end
-        if bS:match("^Enum") then
-            local d1 = bS .. "." .. cP
-            local d2 = bj(d1, false)
-            t.registry[d2] = d1
-            return d2
+        local pathName = dumperState.registry[proxy] or formattedName or "object"
+        local prop = formatValue(key)
+        dumperState.property_store[proxy] = dumperState.property_store[proxy] or {}
+        dumperState.property_store[proxy][key] = val
+        local _cls2 = (dumperState.property_store[proxy] or {}).ClassName or ""
+        if key == "CameraMinZoomDistance" then
+            local n = tonumber(val) or 0; if n < 0 then n = 0 end
+            dumperState.property_store[proxy][key] = n
+        elseif key == "CameraMaxZoomDistance" then
+            local n = tonumber(val) or 400; if n < 0 then n = 0 end
+            dumperState.property_store[proxy][key] = n
+        elseif _cls2 == "Terrain" and key == "WaterWaveSpeed" then
+            local n = tonumber(val) or 100; if n > 100 then n = 100 end; if n < 0 then n = 0 end
+            dumperState.property_store[proxy][key] = n
         end
-        return bk(cP, bh)
-    end
-    if cP == "Completed" then
-        if not bP._completedSignal then
-            bP._completedSignal = bP._getCompletedSignal(bh)
+        if key == "Parent" then
+            _setParent(proxy, isProxy(val) and val or nil)
         end
-        return bP._completedSignal
-    end
-    bi.__newindex = function(b2, b4, b5)
-        if b4 == F or b4 == "__proxy_id" then
-            rawset(b2, b4, b5)
-            return
-        end
-        local bS = t.registry[bh] or aT or "object"
-        local cP = aE(b4)
-        if bS == "Sound" and b4 == "PlaybackLoudness" then
-            error("Attempt to set readonly property PlaybackLoudness", 2)
-        end
-        t.property_store[bh] = t.property_store[bh] or {}
-        if b4 == "Parent" then
-            local old_parent = t.property_store[bh].Parent
-            if old_parent and t.property_store[old_parent] and t.property_store[old_parent].Children then
-                for i, child in ipairs(t.property_store[old_parent].Children) do
-                    if child == bh then
-                        table.remove(t.property_store[old_parent].Children, i)
-                        break
+        local className = (dumperState.property_store[proxy] or {}).ClassName or ""
+        if className == "WeldConstraint" or className == "Weld" or className == "Motor6D" then
+            if key == "Part0" or key == "Part1" then
+                _at.weldRegistry[proxy] = _at.weldRegistry[proxy] or {}
+                _at.weldRegistry[proxy][key] = val
+                local wr = _at.weldRegistry[proxy]
+                if wr.Part0 and wr.Part1 then
+                    local cf0 = (dumperState.property_store[wr.Part0] or {}).CFrame
+                    local cf1 = (dumperState.property_store[wr.Part1] or {}).CFrame
+                    if cf0 and cf1 then
+                        wr.offset = {X = (cf1.X or 0) - (cf0.X or 0), Y = (cf1.Y or 0) - (cf0.Y or 0), Z = (cf1.Z or 0) - (cf0.Z or 0)}
                     end
                 end
             end
-            t.property_store[bh].Parent = b5
-            if b5 and G(b5) then
-                if not t.property_store[b5] then
-                    t.property_store[b5] = {}
-                end
-                if not t.property_store[b5].Children then
-                    t.property_store[b5].Children = {}
-                end
-                local already_exists = false
-                for _, child in ipairs(t.property_store[b5].Children) do
-                    if child == bh then
-                        already_exists = true
-                        break
+        end
+        if key == "CFrame" then
+            local cfVal = val
+            local cfX = (cfVal and cfVal.X) or 0
+            local cfY = (cfVal and cfVal.Y) or 0
+            local cfZ = (cfVal and cfVal.Z) or 0
+            for _, wr in pairs(_at.weldRegistry) do
+                if wr.Part0 == proxy and wr.Part1 and wr.offset then
+                    local nx = cfX + wr.offset.X
+                    local ny = cfY + wr.offset.Y
+                    local nz = cfZ + wr.offset.Z
+                    local newCF
+                    if type(CFrame) == "table" and type(CFrame.new) == "function" then
+                        newCF = CFrame.new(nx, ny, nz)
+                    elseif _makeCFrame then
+                        newCF = _makeCFrame(nx, ny, nz)
+                    else
+                        newCF = {X = nx, Y = ny, Z = nz, Position = {X = nx, Y = ny, Z = nz}}
                     end
+                    dumperState.property_store[wr.Part1] = dumperState.property_store[wr.Part1] or {}
+                    dumperState.property_store[wr.Part1].CFrame = newCF
+                    local posV = newCF.Position
+                    dumperState.property_store[wr.Part1].Position = posV
                 end
-                if not already_exists then
-                    table.insert(t.property_store[b5].Children, bh)
-                end
-                t.parent_map[bh] = b5
             end
-            at(string.format("%s.Parent = %s", bS, aZ(b5)))
-        else
-            t.property_store[bh][b4] = b5
-            at(string.format("%s.%s = %s", bS, cP, aZ(b5)))
         end
+        emitOutput(string.format("%s.%s = %s", pathName, prop, serializeValue(val)))
     end
-    if bS == "Lighting" then
-        if b4 == "Ambient" or b4 == "OutdoorAmbient" or b4 == "ColorShift_Top" or b4 == "ColorShift_Bottom" then
-            t.property_store[bh][b4] = b5
-            at(string.format("%s.%s = %s", bS, cP, aZ(b5)))
-            return
+    meta.__call = function(tbl, ...)
+        local pathName = dumperState.registry[proxy] or formattedName or "func"
+        if pathName == "fenv" or pathName == "getgenv" or pathName:match("env") then
+            return proxy
         end
-    end
-    bi.__call = function(b2, ...)
-        local bS = t.registry[bh] or aT or "func"
-        if bS == "fenv" or bS == "getgenv" or bS:match("env") then
-            return bh
+        if pathName == "game" then
+            errorFunction("attempt to call an Instance value", 0)
         end
-        local bA = {...}
-        local c5 = {}
-        for W, b5 in ipairs(bA) do
-            table.insert(c5, aZ(b5))
+        local args = {...}
+        local serializedArgs = {}
+        for _, val in ipairsFunction(args) do
+            table.insert(serializedArgs, serializeValue(val))
         end
-        local z = bj("result", false)
-        local _ = aW(z, "result")
-        at(string.format("local %s = %s(%s)", _, bS, table.concat(c5, ", ")))
-        return z
+        local resultProxy = createProxyObject("result", false)
+        local varName = registerVariable(resultProxy, "result")
+        emitOutput(string.format("local %s = %s(%s)", varName, pathName, table.concat(serializedArgs, ", ")))
+        return resultProxy
     end
-    local function d3(d4)
-        local function d5(bo, aa)
-            local bh, bi = bg()
-            local d6 = "0"
-            if bo ~= nil then
-                d6 = t.registry[bo] or aZ(bo)
+    local function operatorMeta(opSymbol)
+        local function metaCall(a, b)
+            local proxy, meta = createProxy()
+            local strA = "0"
+            if a ~= nil then strA = dumperState.registry[a] or serializeValue(a) end
+            local strB = "0"
+            if b ~= nil then strB = dumperState.registry[b] or serializeValue(b) end
+            local expression = "(" .. strA .. " " .. opSymbol .. " " .. strB .. ")"
+            dumperState.registry[proxy] = expression
+            meta.__tostring = function() return expression end
+            meta.__call = function() return proxy end
+            meta.__index = function(_, k)
+                if k == proxyList or k == "__proxy_id" then return rawget(proxy, k) end
+                return createProxyObject(expression .. "." .. formatValue(k), false)
             end
-            local d7 = "0"
-            if aa ~= nil then
-                d7 = t.registry[aa] or aZ(aa)
-            end
-            local d8 = "(" .. d6 .. " " .. d4 .. " " .. d7 .. ")"
-            t.registry[bh] = d8
-            bi.__tostring = function()
-                return d8
-            end
-            bi.__call = function()
-                return bh
-            end
-            bi.__index = function(W, b4)
-                if b4 == F or b4 == "__proxy_id" then
-                    return rawget(bh, b4)
-                end
-                return bj(d8 .. "." .. aE(b4), false)
-            end
-            bi.__add = d3("+")
-            bi.__sub = d3("-")
-            bi.__mul = d3("*")
-            bi.__div = d3("/")
-            bi.__mod = d3("%")
-            bi.__pow = d3("^")
-            bi.__concat = d3("..")
-            bi.__eq = function()
-                return false
-            end
-            bi.__lt = function()
-                return false
-            end
-            bi.__le = function()
-                return false
-            end
-            return bh
+            meta.__add = operatorMeta("+")
+            meta.__sub = operatorMeta("-")
+            meta.__mul = operatorMeta("*")
+            meta.__div = operatorMeta("/")
+            meta.__mod = operatorMeta("%")
+            meta.__pow = operatorMeta("^")
+            meta.__concat = operatorMeta("..")
+            meta.__eq = function() return false end
+            meta.__lt = function() return false end
+            meta.__le = function() return false end
+            return proxy
         end
-        return d5
+        return metaCall
     end
-    bi.__add = d3("+")
-    bi.__sub = d3("-")
-    bi.__mul = d3("*")
-    bi.__div = d3("/")
-    bi.__mod = d3("%")
-    bi.__pow = d3("^")
-    bi.__concat = d3("..")
-    bi.__eq = function()
-        return false
+    meta.__add = operatorMeta("+")
+    meta.__sub = operatorMeta("-")
+    meta.__mul = operatorMeta("*")
+    meta.__div = operatorMeta("/")
+    meta.__mod = operatorMeta("%")
+    meta.__pow = operatorMeta("^")
+    meta.__concat = operatorMeta("..")
+    meta.__eq = function(a, b) return rawequal(a, b) end
+    meta.__lt = function() return false end
+    meta.__le = function() return false end
+    meta.__unm = function(a)
+        local proxy, meta = createProxy()
+        dumperState.registry[proxy] = "(-" .. (dumperState.registry[a] or serializeValue(a)) .. ")"
+        meta.__tostring = function() return dumperState.registry[proxy] end
+        return proxy
     end
-    bi.__lt = function()
-        return false
-    end
-    bi.__le = function()
-        return false
-    end
-    bi.__unm = function(bo)
-        local z, d9 = bg()
-        t.registry[z] = "(-" .. (t.registry[bo] or aZ(bo)) .. ")"
-        d9.__tostring = function()
-            return t.registry[z]
-        end
-        return z
-    end
-    bi.__len = function()
-        return 0
-    end
-    bi.__tostring = function()
-        return t.registry[bh] or aT or "Object"
-    end
-    bi.__pairs = function()
-        return function()
-            return nil
-        end, bh, nil
-    end
-    bi.__ipairs = bi.__pairs
-    return bh
+    meta.__len = function() return 0 end
+    meta.__tostring = function() return dumperState.registry[proxy] or formattedName or "Object" end
+    meta.__pairs = function() return function() return nil end, proxy, nil end
+    meta.__ipairs = meta.__pairs
+    return proxy
 end
-local function da(am, db)
+local function createTypeDa(typeName, methods)
     local dc = {}
     local dd = {}
-    dd.__index = function(b2, b4)
-        if b4 == "new" or (db and db[b4]) then
+    dd.__index = function(_, key)
+        if key == "new" or methods and methods[key] then
             return function(...)
-                local bA = {...}
-                local c5 = {}
-                for W, b5 in ipairs(bA) do
-                    table.insert(c5, aZ(b5))
+                local args = {...}
+                local serializedArgs = {}
+                for _, val in ipairsFunction(args) do
+                    table.insert(serializedArgs, serializeValue(val))
                 end
-                local d8 = am .. "." .. b4 .. "(" .. table.concat(c5, ", ") .. ")"
-                local bh, de = bg()
-                t.registry[bh] = d8
-                de.__tostring = function()
-                    return d8
+                local expression = typeName .. "." .. key .. "(" .. table.concat(serializedArgs, ", ") .. ")"
+                local proxy, meta = createProxy()
+                dumperState.registry[proxy] = expression
+                meta.__tostring = function() return expression end
+                meta.__index = function(_, k)
+                    if k == proxyList or k == "__proxy_id" then return rawget(proxy, k) end
+                    if k == "X" or k == "Y" or k == "Z" or k == "W" then return 0 end
+                    if k == "Magnitude" then return 0 end
+                    if k == "Unit" or k == "Position" or k == "CFrame" or k == "LookVector" or k == "RightVector" or k == "UpVector" or k == "Rotation" or k == "p" then return proxy end
+                    if k == "R" or k == "G" or k == "B" then return 1 end
+                    if k == "Width" or k == "Height" then return UDim.new(0, 0) end
+                    if k == "Min" or k == "Max" or k == "Scale" or k == "Offset" then return 0 end
+                    return createProxyObject(expression .. "." .. formatValue(k), false)
                 end
-                de.__index = function(W, bG)
-                    if bG == F or bG == "__proxy_id" then
-                        return rawget(bh, bG)
-                    end
-                    if bG == "X" or bG == "Y" or bG == "Z" or bG == "W" then
-                        return 0
-                    end
-                    if bG == "Magnitude" then
-                        return 0
-                    end
-                    if bG == "Unit" then
-                        return bh
-                    end
-                    if bG == "Position" then
-                        return bh
-                    end
-                    if bG == "CFrame" then
-                        return bh
-                    end
-                    if bG == "LookVector" or bG == "RightVector" or bG == "UpVector" then
-                        return bh
-                    end
-                    if bG == "Rotation" then
-                        return bh
-                    end
-                    if bG == "R" or bG == "G" or bG == "B" then
-                        return 1
-                    end
-                    if bG == "Width" or bG == "Height" then
-                        return UDim.new(0, 0)
-                    end
-                    if bG == "Min" or bG == "Max" then
-                        return 0
-                    end
-                    if bG == "Scale" or bG == "Offset" then
-                        return 0
-                    end
-                    if bG == "p" then
-                        return bh
-                    end
-                    return 0
-                end
-                local function df(Z)
-                    return function(bo, aa)
-                        local dg, dh = bg()
-                        local O = "(" .. (t.registry[bo] or aZ(bo)) .. " " .. Z .. " " .. (t.registry[aa] or aZ(aa)) .. ")"
-                        t.registry[dg] = O
-                        dh.__tostring = function()
-                            return O
-                        end
-                        dh.__index = de.__index
-                        dh.__add = df("+")
-                        dh.__sub = df("-")
-                        dh.__mul = df("*")
-                        dh.__div = df("/")
-                        return dg
+                local function opMeta(symbol)
+                    return function(a, b)
+                        local proxy, meta = createProxy()
+                        local expr = "(" .. (dumperState.registry[a] or serializeValue(a)) .. " " .. symbol .. " " .. (dumperState.registry[b] or serializeValue(b)) .. ")"
+                        dumperState.registry[proxy] = expr
+                        meta.__tostring = function() return expr end
+                        meta.__index = meta.__index
+                        meta.__add = opMeta("+")
+                        meta.__sub = opMeta("-")
+                        meta.__mul = opMeta("*")
+                        meta.__div = opMeta("/")
+                        return proxy
                     end
                 end
-                de.__add = df("+")
-                de.__sub = df("-")
-                de.__mul = df("*")
-                de.__div = df("/")
-                de.__unm = function(bo)
-                    local dg, dh = bg()
-                    t.registry[dg] = "(-" .. (t.registry[bo] or aZ(bo)) .. ")"
-                    dh.__tostring = function()
-                        return t.registry[dg]
-                    end
-                    return dg
+                meta.__add = opMeta("+")
+                meta.__sub = opMeta("-")
+                meta.__mul = opMeta("*")
+                meta.__div = opMeta("/")
+                meta.__unm = function(a)
+                    local proxy, meta = createProxy()
+                    dumperState.registry[proxy] = "(-" .. (dumperState.registry[a] or serializeValue(a)) .. ")"
+                    meta.__tostring = function() return dumperState.registry[proxy] end
+                    return proxy
                 end
-                de.__eq = function()
-                    return false
-                end
-                return bh
+                meta.__eq = function() return false end
+                meta.__typeof = typeName
+                return proxy
             end
         end
         return nil
     end
-    dd.__call = function(b2, ...)
-        return b2.new(...)
-    end
+    dd.__call = function(_, ...) return _.new(...) end
     return setmetatable(dc, dd)
 end
-Vector3 = da("Vector3", {new = true, zero = true, one = true})
-Vector2 = da("Vector2", {new = true, zero = true, one = true})
-UDim = da("UDim", {new = true})
-UDim2 = da("UDim2", {new = true, fromScale = true, fromOffset = true})
-CFrame = da("CFrame", {
-    new = true, Angles = true, lookAt = true, fromEulerAnglesXYZ = true,
-    fromEulerAnglesYXZ = true, fromAxisAngle = true, fromMatrix = true,
-    fromOrientation = true, identity = true
-})
-Color3 = da("Color3", {new = true, fromRGB = true, fromHSV = true, fromHex = true})
-BrickColor = da("BrickColor", {
-    new = true, random = true, White = true, Black = true, Red = true,
-    Blue = true, Green = true, Yellow = true, palette = true
-})
-TweenInfo = function(duration, easeStyle, easeDirection, repeatCount, reverses, delayTime)
-    local proxy = da("TweenInfo", {new = true})("new", duration, easeStyle, easeDirection, repeatCount, reverses, delayTime)
-    if proxy and type(proxy) == "table" then
-        proxy._duration = duration or 0.1
+Vector3 = createTypeDa("Vector3", {new = true, zero = true, one = true})
+Vector2 = createTypeDa("Vector2", {new = true, zero = true, one = true})
+UDim = createTypeDa("UDim", {new = true})
+UDim2 = createTypeDa("UDim2", {new = true, fromScale = true, fromOffset = true})
+CFrame = createTypeDa("CFrame", {new = true, Angles = true, lookAt = true, fromEulerAnglesXYZ = true, fromEulerAnglesYXZ = true, fromAxisAngle = true, fromMatrix = true, fromOrientation = true, identity = true})
+Color3 = createTypeDa("Color3", {new = true, fromRGB = true, fromHSV = true, fromHex = true})
+BrickColor = createTypeDa("BrickColor", {new = true, random = true, White = true, Black = true, Red = true, Blue = true, Green = true, Yellow = true, palette = true})
+TweenInfo = createTypeDa("TweenInfo", {new = true})
+Rect = createTypeDa("Rect", {new = true})
+Region3 = createTypeDa("Region3", {new = true})
+Region3int16 = createTypeDa("Region3int16", {new = true})
+Ray = createTypeDa("Ray", {new = true})
+NumberRange = createTypeDa("NumberRange", {new = true})
+NumberSequence = createTypeDa("NumberSequence", {new = true})
+NumberSequenceKeypoint = createTypeDa("NumberSequenceKeypoint", {new = true})
+ColorSequence = createTypeDa("ColorSequence", {new = true})
+ColorSequence.new = function(...)
+    local args = {...}
+    local keypoints = {}
+    if #args == 1 and typeFunction(args[1]) == "table" and args[1][1] ~= nil then
+        keypoints = args[1]
+    elseif #args == 1 then
+        keypoints = {args[1], args[1]}
+    elseif #args >= 2 then
+        keypoints = args
     end
+    local t = setmetatable({Keypoints = keypoints}, {
+        __typeof = "ColorSequence",
+        __tostring = function() return "ColorSequence" end,
+    })
+    return t
+end
+ColorSequenceKeypoint = createTypeDa("ColorSequenceKeypoint", {new = true})
+PhysicalProperties = createTypeDa("PhysicalProperties", {new = true})
+Font = createTypeDa("Font", {new = true, fromEnum = true, fromName = true, fromId = true})
+RaycastParams = createTypeDa("RaycastParams", {new = true})
+OverlapParams = {new = function()
+        local params = {MaxParts = 0, FilterType = Enum.RaycastFilterType.Exclude, FilterDescendantsInstances = {}}
+        return setmetatable(params, {__typeof = "OverlapParams"})
+    end}
+_makeVector3 = function(x, y, z, expr)
+    x, y, z = toNumberFunction(x) or 0, toNumberFunction(y) or 0, toNumberFunction(z) or 0
+    local proxy, meta = createProxy()
+    local expression = expr or ("Vector3.new(" .. serializeValue(x) .. ", " .. serializeValue(y) .. ", " .. serializeValue(z) .. ")")
+    dumperState.registry[proxy] = expression
+    _at.vectors[proxy] = {x = x, y = y, z = z}
+    local function component(v, axis)
+        local data = _at.vectors[v]
+        if not data then return 0 end
+        return axis == "X" and data.x or axis == "Y" and data.y or data.z
+    end
+    local function binary(a, b, symbol)
+        local ax, ay, az = component(a, "X"), component(a, "Y"), component(a, "Z")
+        local bx, by, bz
+        if typeFunction(b) == "number" then bx, by, bz = b, b, b else bx, by, bz = component(b, "X"), component(b, "Y"), component(b, "Z") end
+        if symbol == "+" then return _makeVector3(ax + bx, ay + by, az + bz, "(" .. serializeValue(a) .. " + " .. serializeValue(b) .. ")") end
+        if symbol == "-" then return _makeVector3(ax - bx, ay - by, az - bz, "(" .. serializeValue(a) .. " - " .. serializeValue(b) .. ")") end
+        if symbol == "*" then return _makeVector3(ax * bx, ay * by, az * bz, "(" .. serializeValue(a) .. " * " .. serializeValue(b) .. ")") end
+        return _makeVector3(bx ~= 0 and ax / bx or 0, by ~= 0 and ay / by or 0, bz ~= 0 and az / bz or 0, "(" .. serializeValue(a) .. " / " .. serializeValue(b) .. ")")
+    end
+    meta.__index = function(_, key)
+        if key == proxyList or key == "__proxy_id" then return rawget(proxy, key) end
+        if key == "X" then return x end
+        if key == "Y" then return y end
+        if key == "Z" then return z end
+        if key == "Magnitude" then return math.sqrt(x * x + y * y + z * z) end
+        if key == "Unit" then
+            local mag = math.sqrt(x * x + y * y + z * z)
+            if mag == 0 then return _makeVector3(0, 0, 0, expression .. ".Unit") end
+            return _makeVector3(x / mag, y / mag, z / mag, expression .. ".Unit")
+        end
+        if key == "Dot" then
+            return function(self, other)
+                local ox, oy, oz = component(other, "X"), component(other, "Y"), component(other, "Z")
+                return x * ox + y * oy + z * oz
+            end
+        end
+        if key == "Cross" then
+            return function(self, other)
+                local ox, oy, oz = component(other, "X"), component(other, "Y"), component(other, "Z")
+                return _makeVector3(y*oz - z*oy, z*ox - x*oz, x*oy - y*ox)
+            end
+        end
+        if key == "Lerp" then
+            return function(self, other, alpha)
+                local ox, oy, oz = component(other, "X"), component(other, "Y"), component(other, "Z")
+                local a = toNumberFunction(alpha) or 0
+                return _makeVector3(x + (ox-x)*a, y + (oy-y)*a, z + (oz-z)*a)
+            end
+        end
+        if key == "FuzzyEq" then
+            return function(self, other, epsilon)
+                local eps = toNumberFunction(epsilon) or 1e-5
+                local ox, oy, oz = component(other, "X"), component(other, "Y"), component(other, "Z")
+                return math.abs(x-ox) <= eps and math.abs(y-oy) <= eps and math.abs(z-oz) <= eps
+            end
+        end
+        return 0
+    end
+    meta.__add = function(a, b) return binary(a, b, "+") end
+    meta.__sub = function(a, b) return binary(a, b, "-") end
+    meta.__mul = function(a, b) return binary(a, b, "*") end
+    meta.__div = function(a, b) return binary(a, b, "/") end
+    meta.__unm = function(a) return _makeVector3(-component(a, "X"), -component(a, "Y"), -component(a, "Z"), "(-" .. serializeValue(a) .. ")") end
+    meta.__eq = function(a, b) return component(a, "X") == component(b, "X") and component(a, "Y") == component(b, "Y") and component(a, "Z") == component(b, "Z") end
+    meta.__tostring = function() return toStringFunction(x) .. ", " .. toStringFunction(y) .. ", " .. toStringFunction(z) end
     return proxy
 end
-Rect = da("Rect", {new = true})
-Region3 = da("Region3", {new = true})
-Region3int16 = da("Region3int16", {new = true})
-Ray = da("Ray", {new = true})
-NumberRange = da("NumberRange", {new = true})
-NumberSequence = da("NumberSequence", {new = true})
-NumberSequenceKeypoint = da("NumberSequenceKeypoint", {new = true})
-ColorSequence = da("ColorSequence", {new = true})
-ColorSequenceKeypoint = da("ColorSequenceKeypoint", {new = true})
-PhysicalProperties = da("PhysicalProperties", {new = true})
-Font = da("Font", {new = true, fromEnum = true, fromName = true, fromId = true})
-RaycastParams = da("RaycastParams", {new = true})
-OverlapParams = da("OverlapParams", {new = true})
-PathWaypoint = da("PathWaypoint", {new = true})
-Axes = da("Axes", {new = true})
-Faces = da("Faces", {new = true})
-Vector3int16 = da("Vector3int16", {new = true})
-Vector2int16 = da("Vector2int16", {new = true})
-CatalogSearchParams = da("CatalogSearchParams", {new = true})
-DateTime = da("DateTime", {now = true, fromUnixTimestamp = true, fromUnixTimestampMillis = true, fromIsoDate = true})
-Random = {new = function(di)
-    local x = {}
-    function x:NextNumber(dj, dk)
-        return (dj or 0) + 0.5 * ((dk or 1) - (dj or 0))
-    end
-    function x:NextInteger(dj, dk)
-        return math.floor((dj or 1) + 0.5 * ((dk or 100) - (dj or 1)))
-    end
-    function x:NextUnitVector()
-        return Vector3.new(0.577, 0.577, 0.577)
-    end
-    function x:Shuffle(dl)
-        return dl
-    end
-    function x:Clone()
-        return Random.new()
-    end
-    return x
-end}
-setmetatable(Random, {__call = function(b2, di) return b2.new(di) end})
-Enum = bj("Enum", true)
-local dm = a.getmetatable(Enum)
-local old_enum_index = dm.__index
-
--- FIX 1: Tambahkan GetEnums() method
--- Support kedua cara: sebagai method dan sebagai function
-dm.GetEnums = function(self)
-    local enums = {}
-    for k, v in pairs(self) do
-        if type(k) == "string" and k ~= "GetEnums" and k ~= "GetEnumItems" and type(v) ~= "function" then
-            table.insert(enums, v)
-        end
-    end
-    return enums
-end
-
--- Juga tambahkan di global Enum
-function Enum.GetEnums(self)
-    return dm.GetEnums(self)
-end
-
-dm.__index = function(b2, b4)
-    if b4 == "GetEnumItems" then
-        return function(self)
-            local items = {}
-            for k, v in pairs(self) do
-                if k ~= "GetEnumItems" and type(v) ~= "function" then
-                    if G(v) then
-                        if not t.property_store[v] then
-                            t.property_store[v] = {}
-                        end
-                        t.property_store[v].Name = t.property_store[v].Name or tostring(k)
-                        t.property_store[v].Value = t.property_store[v].Value or 1
-                        table.insert(items, v)
-                    end
-                end
-            end
-            return items
-        end
-    end
-    if b4 == "GetEnums" then
-        return dm.GetEnums
-    end
-    if b4 == F or b4 == "__proxy_id" then
-        return rawget(b2, b4)
-    end
-    local dn = bj("Enum." .. aE(b4), false)
-    t.registry[dn] = "Enum." .. aE(b4)
-    return dn
-end
-
--- FIX 2: Tambah Enum.Font items
-local font_enum = bj("Enum.Font", false)
-t.property_store[font_enum] = t.property_store[font_enum] or {}
-local font_items = {
-    {Name = "Gotham", Value = 1, Family = "Gotham", Weight = 400},
-    {Name = "GothamBold", Value = 2, Family = "Gotham", Weight = 700},
-    {Name = "GothamMedium", Value = 3, Family = "Gotham", Weight = 500},
-    {Name = "SourceSans", Value = 4, Family = "Source Sans", Weight = 400},
-    {Name = "SourceSansBold", Value = 5, Family = "Source Sans", Weight = 700},
-}
-for _, item in ipairs(font_items) do
-    local obj = bj("Enum.Font." .. item.Name, false)
-    t.registry[obj] = "Enum.Font." .. item.Name
-    if not t.property_store[obj] then t.property_store[obj] = {} end
-    t.property_store[obj].Name = item.Name
-    t.property_store[obj].Value = item.Value
-    t.property_store[obj].Family = item.Family
-    t.property_store[obj].Weight = item.Weight
-    font_enum[item.Name] = obj
-    font_enum[item.Value] = obj
-end
-
--- FIX 3: Tambah Enum.FontWeight
-local fontweight_enum = bj("Enum.FontWeight", false)
-local fontweight_items = {
-    {Name = "Regular", Value = 400},
-    {Name = "Medium", Value = 500},
-    {Name = "Bold", Value = 700},
-}
-for _, item in ipairs(fontweight_items) do
-    local obj = bj("Enum.FontWeight." .. item.Name, false)
-    t.registry[obj] = "Enum.FontWeight." .. item.Name
-    if not t.property_store[obj] then t.property_store[obj] = {} end
-    t.property_store[obj].Name = item.Name
-    t.property_store[obj].Value = item.Value
-    fontweight_enum[item.Name] = obj
-    fontweight_enum[item.Value] = obj
-end
-
--- FIX 4: Tambah Enum.KeyInterpolationMode
-local interp_enum = bj("Enum.KeyInterpolationMode", false)
-t.property_store[interp_enum] = t.property_store[interp_enum] or {}
-local interp_items = {
-    {Name = "Linear", Value = 0},
-    {Name = "Constant", Value = 1},
-    {Name = "Cubic", Value = 2},
-}
-for _, item in ipairs(interp_items) do
-    local obj = bj("Enum.KeyInterpolationMode." .. item.Name, false)
-    t.registry[obj] = "Enum.KeyInterpolationMode." .. item.Name
-    if not t.property_store[obj] then t.property_store[obj] = {} end
-    t.property_store[obj].Name = item.Name
-    t.property_store[obj].Value = item.Value
-    interp_enum[item.Name] = obj
-    interp_enum[item.Value] = obj
-end
-
--- FIX 5: Font.fromEnum() method
-local font_mt = getmetatable(font_enum) or {}
-font_mt.fromEnum = function(self, font_enum_item)
-    if type(font_enum_item) == "table" and t.registry[font_enum_item] then
-        local font_proxy = bj("Font", false)
-        aW(font_proxy, "font")
-        if not t.property_store[font_proxy] then t.property_store[font_proxy] = {} end
-        t.property_store[font_proxy].Family = t.property_store[font_enum_item].Family or "Unknown"
-        t.property_store[font_proxy].Weight = t.property_store[font_enum_item].Weight or 400
-        t.property_store[font_proxy].Name = t.property_store[font_enum_item].Name or "Unknown"
-        return font_proxy
-    end
-    return bj("Font", false)
-end
-setmetatable(font_enum, font_mt)
-
--- FIX 6: FloatCurve dan FloatCurveKey
-local FloatCurveKey = {
-    new = function(time, value, interpolation)
-        local key = bj("FloatCurveKey", false)
-        aW(key, "floatKey")
-        if not t.property_store[key] then t.property_store[key] = {} end
-        t.property_store[key].Time = time or 0
-        t.property_store[key].Value = value or 0
-        t.property_store[key].Interpolation = interpolation or interp_enum.Linear
-        return key
-    end
-}
-
-local FloatCurve = {
-    new = function()
-        local curve = bj("FloatCurve", false)
-        aW(curve, "floatCurve")
-        if not t.property_store[curve] then t.property_store[curve] = {} end
-        t.property_store[curve]._keys = {}
-        return curve
-    end
-}
-
-local floatcurve_mt = {}
-floatcurve_mt.InsertKey = function(self, key)
-    if not t.property_store[self] then t.property_store[self] = {} end
-    if not t.property_store[self]._keys then t.property_store[self]._keys = {} end
-    table.insert(t.property_store[self]._keys, key)
-    return #t.property_store[self]._keys
-end
-
-floatcurve_mt.GetKeyAtIndex = function(self, index)
-    if not t.property_store[self] or not t.property_store[self]._keys then return nil end
-    return t.property_store[self]._keys[index]
-end
-
-floatcurve_mt.GetValueAtTime = function(self, time)
-    if not t.property_store[self] or not t.property_store[self]._keys then return 0 end
-    local keys = t.property_store[self]._keys
-    if #keys == 0 then return 0 end
-    if time <= keys[1].Time then return keys[1].Value end
-    if time >= keys[#keys].Time then return keys[#keys].Value end
-    
-    for i = 1, #keys - 1 do
-        local k1 = keys[i]
-        local k2 = keys[i + 1]
-        if time >= k1.Time and time <= k2.Time then
-            local t_frac = (time - k1.Time) / (k2.Time - k1.Time)
-            local interp = k1.Interpolation
-            if interp == interp_enum.Linear then
-                return k1.Value + (k2.Value - k1.Value) * t_frac
-            elseif interp == interp_enum.Constant then
-                return k1.Value
-            else
-                return k1.Value + (k2.Value - k1.Value) * (3*t_frac*t_frac - 2*t_frac*t_frac*t_frac)
-            end
-        end
-    end
-    return 0
-end
-
-floatcurve_mt.Destroy = function(self) end
-
-setmetatable(FloatCurve, {__call = function(self) return FloatCurve.new() end})
-_G.FloatCurve = FloatCurve
-_G.FloatCurveKey = FloatCurveKey
-setmetatable(_G.FloatCurve, {__call = function(_, ...) return FloatCurve.new(...) end})
-setmetatable(_G.FloatCurveKey, {__call = function(_, ...) return FloatCurveKey.new(...) end})
-Instance = {new = function(bX, bS)
-    local bY = aE(bX)
-    local x = bj(bY, false)
-    local _ = aW(x, bY)
-    if bS then
-        local dp = t.registry[bS] or aZ(bS)
-        at(string.format("local %s = Instance.new(%s, %s)", _, aH(bY), dp))
-        t.parent_map[x] = bS
-        if not t.property_store[x] then
-            t.property_store[x] = {}
-        end
-        t.property_store[x].Parent = bS
-        if not t.property_store[bS] then
-            t.property_store[bS] = {}
-        end
-        if not t.property_store[bS].Children then
-            t.property_store[bS].Children = {}
-        end
-        table.insert(t.property_store[bS].Children, x)
-    else
-        at(string.format("local %s = Instance.new(%s)", _, aH(bY)))
-    end
-    return x
-end}
-game = bj("game", true)
-workspace = bj("workspace", true)
-if not t.property_store[workspace] then
-    t.property_store[workspace] = {}
-end
-t.property_store[workspace].ClassName = "Workspace"
-t.property_store[workspace].Name = "Workspace"
-script = bj("script", true)
-t.property_store[script] = {Name = "DumpedScript", Parent = game, ClassName = "LocalScript"}
-t.property_store[game] = t.property_store[game] or {}
-t.property_store[game].JobId = "00000000-0000-0000-0000-000000000000"
-t.property_store[game].PlaceVersion = 1
-t.property_store[game].CreatorId = 1
-t.property_store[game].CreatorType = Enum.CreatorType.User
-t.property_store[game].Name = "Game"
-t.property_store[game].ClassName = "DataModel"
-if not t.property_store[game] then
-    t.property_store[game] = {}
-end
-t.property_store[game].ClassName = "DataModel"
-t.property_store[game].Name = "Game"
-
--- workspace
-if t.property_store[game] then
-    if not t.property_store[game].Children then
-        t.property_store[game].Children = {}
-    end
-    local workspace_exists = false
-    for _, child in ipairs(t.property_store[game].Children) do
-        if child == workspace then
-            workspace_exists = true
-            break
-        end
-    end
-    if not workspace_exists then
-        table.insert(t.property_store[game].Children, workspace)
-    end
-end
-t.parent_map[workspace] = game
-
--- RBXAnalyticsService
-local analyticsService = bj("RBXAnalyticsService", true)
-t.property_store[analyticsService] = {}
-t.property_store[analyticsService].Name = "RBXAnalyticsService"
-t.property_store[analyticsService].ClassName = "RBXAnalyticsService"
-local analyticsMt = getmetatable(analyticsService) or {}
-analyticsMt.LogEvent = function(self, eventName, parameters)
-    at(string.format("%s:LogEvent(%s, %s)", t.registry[analyticsService] or "RBXAnalyticsService", aH(eventName), aZ(parameters or {})))
-    table.insert(t.call_graph, {type = "AnalyticsEvent", name = "LogEvent", eventName = eventName, parameters = parameters})
-    return true
-end
-analyticsMt.LogCustomEvent = function(self, eventName, eventData)
-    at(string.format("%s:LogCustomEvent(%s, %s)", t.registry[analyticsService] or "RBXAnalyticsService", aH(eventName), aH(eventData or "")))
-    return true
-end
-analyticsMt.LogSessionStart = function(self, sessionData)
-    at(string.format("%s:LogSessionStart(%s)", t.registry[analyticsService] or "RBXAnalyticsService", aZ(sessionData or {})))
-    return true
-end
-analyticsMt.LogSessionEnd = function(self, sessionData)
-    at(string.format("%s:LogSessionEnd(%s)", t.registry[analyticsService] or "RBXAnalyticsService", aZ(sessionData or {})))
-    return true
-end
-analyticsMt.GetAnalyticsData = function(self)
-    local proxy = bj("AnalyticsData", false)
-    at(string.format("local %s = %s:GetAnalyticsData()", t.registry[proxy] or "analyticsData", t.registry[analyticsService] or "RBXAnalyticsService"))
-    return proxy
-end
-analyticsMt.SetUserId = function(self, userId)
-    at(string.format("%s:SetUserId(%s)", t.registry[analyticsService] or "RBXAnalyticsService", aZ(userId)))
-    return true
-end
-analyticsMt.SetSessionId = function(self, sessionId)
-    at(string.format("%s:SetSessionId(%s)", t.registry[analyticsService] or "RBXAnalyticsService", aH(sessionId)))
-    return true
-end
-analyticsMt.Flush = function(self)
-    at(string.format("%s:Flush()", t.registry[analyticsService] or "RBXAnalyticsService"))
-    return true
-end
-setmetatable(analyticsService, analyticsMt)
-_G.RBXAnalyticsService = analyticsService
-game:GetService("RBXAnalyticsService")
-Lighting = bj("Lighting", true)
-t.property_store[Lighting] = {
-    Ambient = Color3.new(0.5, 0.5, 0.5), OutdoorAmbient = Color3.new(0.5, 0.5, 0.5),
-    ColorShift_Top = Color3.new(0, 0, 0), ColorShift_Bottom = Color3.new(0, 0, 0),
-    GlobalShadows = true, ClockTime = 14, GeographicLatitude = 41.9, Brightness = 1,
-    Technology = "ShadowMap", FogColor = Color3.new(0.5, 0.5, 0.5), FogEnd = 100000, FogStart = 0
-}
-_G.Lighting = Lighting
-task = {
-    _add_heartbeat = function(fn)
-        if type(fn) == "function" then
-            table.insert(_G.__heartbeat_callbacks, fn)
-        end
+Vector3 = {
+    new = function(x, y, z) return _makeVector3(x, y, z) end,
+    zero = _makeVector3(0, 0, 0, "Vector3.zero"),
+    one = _makeVector3(1, 1, 1, "Vector3.one"),
+    fromNormalId = function(normalId)
+        local name = toStringFunction(normalId)
+        if name:find("Right")  then return _makeVector3( 1,  0,  0) end
+        if name:find("Left")   then return _makeVector3(-1,  0,  0) end
+        if name:find("Top")    then return _makeVector3( 0,  1,  0) end
+        if name:find("Bottom") then return _makeVector3( 0, -1,  0) end
+        if name:find("Back")   then return _makeVector3( 0,  0,  1) end
+        if name:find("Front")  then return _makeVector3( 0,  0, -1) end
+        return _makeVector3(0, 0, 0)
     end,
-    wait = function(dq)
-        for _, cb in ipairs(_G.__heartbeat_callbacks or {}) do
-            pcall(cb, dq or 0.016)
-        end
-        t.wait_calls = (t.wait_calls or 0) + 1
-        if t.wait_calls > r.TASK_WAIT_LIMIT then
-            at("error('lunr: task.wait infinite loop detected and stopped')")
-            error('lunr: task.wait infinite loop detected and stopped')
-        end
-        if dq then
-            at(string.format("task.wait(%s)", aZ(dq)))
-        else
-            at("task.wait()")
-        end
-        return dq or 0.03, p.clock()
+    fromAxis = function(axis)
+        local name = toStringFunction(axis)
+        if name:find("X") then return _makeVector3(1, 0, 0) end
+        if name:find("Y") then return _makeVector3(0, 1, 0) end
+        if name:find("Z") then return _makeVector3(0, 0, 1) end
+        return _makeVector3(0, 0, 0)
     end,
-    spawn = function(dr, ...)
-        if type(dr) ~= "function" and type(dr) ~= "thread" then
-            error("invalid argument #1 to 'spawn' (function or thread expected)", 2)
-        end
-        local bA = {...}
-        local thread = coroutine.create(function() return true end)
-        at("task.spawn(function()")
-        t.indent = t.indent + 1
-        if j(dr) == "function" then
-            local success, result = pcall(dr, table.unpack(bA or {}))
-            if not success then
-                at("-- Error in task.spawn: " .. tostring(result))
-            end
-        elseif j(dr) == "thread" then
-            pcall(coroutine.resume, dr)
-        end
-        while t.pending_iterator do
-            t.indent = t.indent - 1
-            at("end")
-            t.pending_iterator = false
-        end
-        t.indent = t.indent - 1
-        at("end)")
-        return thread
-    end,
-    delay = function(dq, dr, ...)
-        local bA = {...}
-        at(string.format("task.delay(%s, function()", aZ(dq or 0)))
-        t.indent = t.indent + 1
-        if j(dr) == "function" and (dq or 0) < 1 then
-            xpcall(function() dr(table.unpack(bA or {})) end, function(ds) end)
-        end
-        while t.pending_iterator do
-            t.indent = t.indent - 1
-            at("end")
-            t.pending_iterator = false
-        end
-        t.indent = t.indent - 1
-        at("end)")
-    end,
-    defer = function(dr, ...)
-        local bA = {...}
-        at("task.defer(function()")
-        t.indent = t.indent + 1
-        if j(dr) == "function" then
-            xpcall(function() dr(table.unpack(bA or {})) end, function(ds) end)
-        end
-        while t.pending_iterator do
-            t.indent = t.indent - 1
-            at("end")
-            t.pending_iterator = false
-        end
-        t.indent = t.indent - 1
-        at("end)")
-    end,
-    cancel = function(dt)
-        at("task.cancel(thread)")
-    end,
-    synchronize = function()
-        at("task.synchronize()")
-    end,
-    desynchronize = function()
-        at("task.desynchronize()")
-    end
 }
-wait = function(dq)
-    t.wait_calls = (t.wait_calls or 0) + 1
-    if t.wait_calls > r.TASK_WAIT_LIMIT then
-        at("error('lunr: wait infinite loop detected and stopped')")
-        error('lunr: wait infinite loop detected and stopped')
-    end
-    if dq then
-        at(string.format("wait(%s)", aZ(dq)))
-    else
-        at("wait()")
-    end
-    return dq or 0.03, p.clock()
-end
-delay = function(dq, dr)
-    at(string.format("delay(%s, function()", aZ(dq or 0)))
-    t.indent = t.indent + 1
-    if j(dr) == "function" then
-        xpcall(dr, function() end)
-    end
-    t.indent = t.indent - 1
-    at("end)")
-end
-spawn = function(dr)
-    at("spawn(function()")
-    t.indent = t.indent + 1
-    if j(dr) == "function" then
-        xpcall(dr, function() end)
-    end
-    t.indent = t.indent - 1
-    at("end)")
-end
-tick = function()
-    return p.time()
-end
-time = function()
-    return p.clock()
-end
-elapsedTime = function()
-    return p.clock()
-end
-local du = {}
-local dv = 999999999
-local function dw(bG, dx)
-    return dx
-end
-local function dy()
-    local b2 = {}
-    setmetatable(b2, {
-        __call = function(self, ...) return self end,
-        __index = function(self, b4)
-            if _G[b4] ~= nil then
-                return dw(b4, _G[b4])
+setmetatable(Vector3, {__call = function(_, x, y, z) return _.new(x, y, z) end})
+local function _valueType(typeName, fields, methods)
+    local obj = fields or {}
+    return setmetatable(obj, {
+        __typeof = typeName,
+        __index = methods or {},
+        __tostring = function() return typeName end,
+        __eq = function(a, b)
+            if typeFunction(a) ~= "table" or typeFunction(b) ~= "table" then return false end
+            local ma, mb = getMetatableFunction(a), getMetatableFunction(b)
+            if not ma or not mb or ma.__typeof ~= mb.__typeof then return false end
+            for k, v in pairsFunction(a) do
+                if b[k] ~= v then return false end
             end
-            if b4 == "game" then
-                return game
+            for k, v in pairsFunction(b) do
+                if a[k] ~= v then return false end
             end
-            if b4 == "workspace" then
-                return workspace
-            end
-            if b4 == "script" then
-                return script
-            end
-            if b4 == "Enum" then
-                return Enum
-            end
-            return nil
-        end,
-        __newindex = function(self, b4, b5)
-            _G[b4] = b5
-            du[b4] = 0
-            at(string.format("_G.%s = %s", aE(b4), aZ(b5)))
+            return true
         end
     })
-    return b2
 end
-_G.G = dy()
-_G.g = dy()
-_G.ENV = dy()
-_G.env = dy()
-_G.E = dy()
-_G.e = dy()
-_G.L = dy()
-_G.l = dy()
-_G.F = dy()
-_G.f = dy()
-local function dz(dA)
-    local bh = {}
-    local dd = {}
-    local dB = {
-        "hookfunction", "hookmetamethod", "newcclosure", "replaceclosure",
-        "checkcaller", "iscclosure", "islclosure", "getrawmetatable",
-        "setreadonly", "make_writeable", "getrenv", "getgc", "getinstances"
+local function _num(v, default) return toNumberFunction(v) or default or 0 end
+local function _makeVector2(x, y)
+    x, y = _num(x), _num(y)
+    local methods = {}
+    function methods:Dot(other) return self.X * (other and other.X or 0) + self.Y * (other and other.Y or 0) end
+    local mt
+    mt = {
+        __typeof = "Vector2",
+        __index = function(self, key)
+            if key == "Magnitude" then return math.sqrt(self.X * self.X + self.Y * self.Y) end
+            if key == "Unit" then
+                local mag = math.sqrt(self.X * self.X + self.Y * self.Y)
+                return mag == 0 and _makeVector2(0, 0) or _makeVector2(self.X / mag, self.Y / mag)
+            end
+            return methods[key]
+        end,
+        __add = function(a, b) return _makeVector2(a.X + b.X, a.Y + b.Y) end,
+        __sub = function(a, b) return _makeVector2(a.X - b.X, a.Y - b.Y) end,
+        __mul = function(a, b)
+            if typeFunction(a) == "number" then return _makeVector2(a * b.X, a * b.Y) end
+            if typeFunction(b) == "number" then return _makeVector2(a.X * b, a.Y * b) end
+            return _makeVector2(a.X * b.X, a.Y * b.Y)
+        end,
+        __div = function(a, b)
+            if typeFunction(b) == "number" then return _makeVector2(a.X / b, a.Y / b) end
+            return _makeVector2(a.X / b.X, a.Y / b.Y)
+        end,
+        __unm = function(a) return _makeVector2(-a.X, -a.Y) end,
+        __eq = function(a, b) return typeFunction(b) == "table" and a.X == b.X and a.Y == b.Y end,
+        __tostring = function(a) return ("Vector2.new(%s, %s)"):format(a.X, a.Y) end,
     }
-    local function dC(dD, bG)
-        local bd = aE(bG)
-        if bd:match("^[%a_][%w_]*$") then
-            if dD then
-                return dD .. "." .. bd
+    return setmetatable({X = x, Y = y}, mt)
+end
+Vector2 = {new = function(x, y) return _makeVector2(x, y) end}
+Vector2.zero = Vector2.new(0, 0)
+Vector2.one = Vector2.new(1, 1)
+setmetatable(Vector2, {__call = function(_, x, y) return _.new(x, y) end})
+local _oldVector3New = Vector3.new
+Vector3.new = function(x, y, z)
+    local v = _oldVector3New(x, y, z)
+    local mt = getMetatableFunction(v)
+    local oldIndex = mt.__index
+    mt.__index = function(self, key)
+        if key == "Dot" then
+            return function(_, other) return self.X * (other and other.X or 0) + self.Y * (other and other.Y or 0) + self.Z * (other and other.Z or 0) end
+        end
+        if key == "Cross" then
+            return function(_, other)
+                return Vector3.new(
+                    self.Y * (other and other.Z or 0) - self.Z * (other and other.Y or 0),
+                    self.Z * (other and other.X or 0) - self.X * (other and other.Z or 0),
+                    self.X * (other and other.Y or 0) - self.Y * (other and other.X or 0)
+                )
             end
-            return bd
+        end
+        return oldIndex(self, key)
+    end
+    return v
+end
+Vector3.zero = Vector3.new(0, 0, 0)
+Vector3.one = Vector3.new(1, 1, 1)
+UDim = {new = function(scale, offset) return _valueType("UDim", {Scale = _num(scale), Offset = _num(offset)}) end}
+setmetatable(UDim, {__call = function(_, scale, offset) return _.new(scale, offset) end})
+UDim2 = {
+    new = function(xs, xo, ys, yo) return _valueType("UDim2", {X = UDim.new(xs, xo), Y = UDim.new(ys, yo)}) end,
+    fromScale = function(x, y) return UDim2.new(x, 0, y, 0) end,
+    fromOffset = function(x, y) return UDim2.new(0, x, 0, y) end,
+}
+setmetatable(UDim2, {__call = function(_, ...) return _.new(...) end})
+Color3 = {
+    new = function(r, g, b)
+        local rv, gv, bv = _num(r), _num(g), _num(b)
+        if rv < 0 or rv > 1 or gv < 0 or gv > 1 or bv < 0 or bv > 1 then
+            errorFunction("R, G, and B must each be in the range [0, 1]", 2)
+        end
+        return setmetatable({R = rv, G = gv, B = bv}, {
+            __typeof = "Color3",
+            __tostring = function(self) return string.format("[R:%g, G:%g, B:%g]", self.R, self.G, self.B) end,
+            __eq = function(a, b) return typeFunction(b) == "table" and a.R == b.R and a.G == b.G and a.B == b.B end,
+        })
+    end,
+    fromRGB = function(r, g, b) return Color3.new(_num(r) / 255, _num(g) / 255, _num(b) / 255) end,
+    fromHSV = function(h, s, v) return Color3.new(v or 1, v or 1, v or 1) end,
+    fromHex = function(hex) return Color3.fromRGB(255, 255, 255) end,
+}
+setmetatable(Color3, {__call = function(_, ...) return _.new(...) end})
+BrickColor = {
+    new = function(name)
+        name = formatValue(name or "Medium stone grey")
+        return _valueType("BrickColor", {Name = name, Number = 1, Color = Color3.fromRGB(255, 0, 0)})
+    end,
+    random = function() return BrickColor.new("Medium stone grey") end,
+}
+setmetatable(BrickColor, {__call = function(_, ...) return _.new(...) end})
+NumberRange = {new = function(min, max) return _valueType("NumberRange", {Min = _num(min), Max = max ~= nil and _num(max) or _num(min)}) end}
+NumberSequence = {new = function(value) return _valueType("NumberSequence", {Keypoints = typeFunction(value) == "table" and value or {{Time = 0, Value = _num(value)}, {Time = 1, Value = _num(value)}}}) end}
+TweenInfo = {new = function(timeValue, style, direction, repeatCount, reverses, delayTime) return _valueType("TweenInfo", {Time = _num(timeValue), EasingStyle = style or Enum.EasingStyle.Quad, EasingDirection = direction or Enum.EasingDirection.Out, RepeatCount = repeatCount or 0, Reverses = reverses or false, DelayTime = delayTime or 0}) end}
+Ray = {new = function(origin, direction) return _valueType("Ray", {Origin = origin or Vector3.zero, Direction = direction or Vector3.new(0, 0, -1)}) end}
+Rect = {new = function(a, b, c, d)
+    local minV = typeFunction(a) == "table" and a or Vector2.new(a, b)
+    local maxV = typeFunction(c) == "table" and c or Vector2.new(c, d)
+    return _valueType("Rect", {Min = minV, Max = maxV, Width = maxV.X - minV.X, Height = maxV.Y - minV.Y})
+end}
+Region3 = {new = function(minVec, maxVec)
+    local mn = minVec or Vector3.new(0,0,0)
+    local mx = maxVec or Vector3.new(0,0,0)
+    local sz = Vector3.new(mx.X - mn.X, mx.Y - mn.Y, mx.Z - mn.Z)
+    return _valueType("Region3", {CFrame = CFrame.new((mn.X+mx.X)/2,(mn.Y+mx.Y)/2,(mn.Z+mx.Z)/2), Size = sz})
+end}
+PhysicalProperties = {new = function(density, friction, elasticity, frictionWeight, elasticityWeight) return _valueType("PhysicalProperties", {Density = _num(density, 1), Friction = _num(friction, 0.3), Elasticity = _num(elasticity, 0.5), FrictionWeight = _num(frictionWeight, 1), ElasticityWeight = _num(elasticityWeight, 1)}) end}
+_makeCFrame = function(x, y, z)
+    local ox, oy, oz = _num(x), _num(y), _num(z)
+    local obj = {X = ox, Y = oy, Z = oz}
+    obj.Position = Vector3.new(ox, oy, oz)
+    obj.p = obj.Position
+    obj.LookVector = Vector3.new(0, 0, -1)
+    obj.RightVector = Vector3.new(1, 0, 0)
+    obj.UpVector = Vector3.new(0, 1, 0)
+    obj.Inverse = function(self) return _makeCFrame(-ox, -oy, -oz) end
+    obj.ToObjectSpace = function(self, other)
+        local ox2 = (other and (other.X or 0)) or 0
+        local oy2 = (other and (other.Y or 0)) or 0
+        local oz2 = (other and (other.Z or 0)) or 0
+        return _makeCFrame(ox2 - ox, oy2 - oy, oz2 - oz)
+    end
+    obj.ToWorldSpace = function(self, other)
+        local ox2 = (other and (other.X or 0)) or 0
+        local oy2 = (other and (other.Y or 0)) or 0
+        local oz2 = (other and (other.Z or 0)) or 0
+        return _makeCFrame(ox + ox2, oy + oy2, oz + oz2)
+    end
+    obj.PointToObjectSpace = function(self, point)
+        return Vector3.new(
+            (point and point.X or 0) - ox,
+            (point and point.Y or 0) - oy,
+            (point and point.Z or 0) - oz
+        )
+    end
+    obj.PointToWorldSpace = function(self, point)
+        return Vector3.new(
+            (point and point.X or 0) + ox,
+            (point and point.Y or 0) + oy,
+            (point and point.Z or 0) + oz
+        )
+    end
+    return setmetatable(obj, {
+        __typeof = "CFrame",
+        __index = function(self, key) return rawget(self, key) end,
+        __mul = function(a, b)
+            if getMetatableFunction(b) and getMetatableFunction(b).__typeof == "CFrame" then
+                return _makeCFrame(a.X + b.X, a.Y + b.Y, a.Z + b.Z)
+            end
+            if getMetatableFunction(b) and getMetatableFunction(b).__typeof == "Vector3" then
+                return Vector3.new(a.X + b.X, a.Y + b.Y, a.Z + b.Z)
+            end
+            return a
+        end,
+        __eq = function(a, b) return typeFunction(b) == "table" and a.X == b.X and a.Y == b.Y and a.Z == b.Z end,
+        __tostring = function(a) return ("CFrame.new(%s, %s, %s)"):format(a.X, a.Y, a.Z) end,
+    })
+end
+CFrame = {
+    new = function(x, y, z) return _makeCFrame(x, y, z) end,
+    Angles = function() return _makeCFrame(0, 0, 0) end,
+    lookAt = function(origin, target) return _makeCFrame(origin and origin.X or 0, origin and origin.Y or 0, origin and origin.Z or 0) end,
+    LookAt = function(origin, target) return CFrame.lookAt(origin, target) end,
+    fromEulerAnglesXYZ = function() return _makeCFrame(0, 0, 0) end,
+    fromEulerAnglesYXZ = function() return _makeCFrame(0, 0, 0) end,
+    fromAxisAngle = function() return _makeCFrame(0, 0, 0) end,
+    fromMatrix = function(pos) return _makeCFrame(pos and pos.X or 0, pos and pos.Y or 0, pos and pos.Z or 0) end,
+    fromOrientation = function() return _makeCFrame(0, 0, 0) end,
+}
+CFrame.identity = CFrame.new(0, 0, 0)
+setmetatable(CFrame, {__call = function(_, ...) return _.new(...) end})
+PathWaypoint = createTypeDa("PathWaypoint", {new = true})
+Axes = createTypeDa("Axes", {new = true})
+Faces = createTypeDa("Faces", {new = true})
+Vector3int16 = createTypeDa("Vector3int16", {new = true})
+Vector2int16 = createTypeDa("Vector2int16", {new = true})
+CatalogSearchParams = createTypeDa("CatalogSearchParams", {new = true})
+DateTime = {
+    now = function()
+        return DateTime.fromUnixTimestamp(os.time())
+    end,
+    fromUnixTimestamp = function(ts)
+        ts = toNumberFunction(ts) or 0
+        local dt = setmetatable({UnixTimestamp = ts, UnixTimestampMillis = ts * 1000}, {
+            __typeof = "DateTime",
+            __index = function(self, key)
+                if key == "UnixTimestamp" then return ts end
+                if key == "UnixTimestampMillis" then return ts * 1000 end
+                if key == "FormatUniversalTime" then
+                    return function(self2, fmt, locale)
+                        -- convert unix timestamp to date components
+                        local t = os.date("!*t", ts)
+                        local result = fmt
+                        result = string.gsub(result, "YYYY", string.format("%04d", t.year))
+                        result = string.gsub(result, "YY", string.format("%02d", t.year % 100))
+                        result = string.gsub(result, "MM", string.format("%02d", t.month))
+                        result = string.gsub(result, "DD", string.format("%02d", t.day))
+                        result = string.gsub(result, "HH", string.format("%02d", t.hour))
+                        result = string.gsub(result, "mm", string.format("%02d", t.min))
+                        result = string.gsub(result, "SS", string.format("%02d", t.sec))
+                        return result
+                    end
+                end
+                if key == "FormatLocalTime" then
+                    return function(self2, fmt, locale)
+                        local t = os.date("*t", ts)
+                        local result = fmt
+                        result = string.gsub(result, "YYYY", string.format("%04d", t.year))
+                        result = string.gsub(result, "YY", string.format("%02d", t.year % 100))
+                        result = string.gsub(result, "MM", string.format("%02d", t.month))
+                        result = string.gsub(result, "DD", string.format("%02d", t.day))
+                        result = string.gsub(result, "HH", string.format("%02d", t.hour))
+                        result = string.gsub(result, "mm", string.format("%02d", t.min))
+                        result = string.gsub(result, "SS", string.format("%02d", t.sec))
+                        return result
+                    end
+                end
+                if key == "ToIsoDate" then
+                    return function(self2)
+                        local t = os.date("!*t", ts)
+                        return string.format("%04d-%02d-%02dT%02d:%02d:%02dZ", t.year, t.month, t.day, t.hour, t.min, t.sec)
+                    end
+                end
+                if key == "ToUniversalTime" then
+                    return function(self2)
+                        local t = os.date("!*t", ts)
+                        return {Year=t.year,Month=t.month,Day=t.day,Hour=t.hour,Minute=t.min,Second=t.sec,Millisecond=0}
+                    end
+                end
+            end,
+        })
+        return dt
+    end,
+    fromUnixTimestampMillis = function(ms)
+        return DateTime.fromUnixTimestamp(math.floor((toNumberFunction(ms) or 0) / 1000))
+    end,
+    fromIsoDate = function(iso)
+        return DateTime.fromUnixTimestamp(0)
+    end,
+}
+Random = {new = function(seed)
+        local obj = {}
+        function obj:NextNumber(min, max) return (min or 0) + 0.5 * ((max or 1) - (min or 0)) end
+        function obj:NextInteger(min, max) return math.floor((min or 1) + 0.5 * ((max or 100) - (min or 1))) end
+        function obj:NextUnitVector() return Vector3.new(0.577, 0.577, 0.577) end
+        function obj:Shuffle(tab) return tab end
+        function obj:Clone() return Random.new() end
+        return obj
+    end}
+setmetatable(Random, {__call = function(_, seed) return _.new(seed) end})
+Enum = createProxyObject("Enum", true)
+local enumMeta = debugLibrary.getmetatable(Enum)
+enumMeta.__index = function(_, key)
+    if key == proxyList or key == "__proxy_id" then return rawget(_, key) end
+    local enumName = "Enum." .. formatValue(key)
+    if not _at.enum[enumName] then
+        local enumProxy = createProxyObject(enumName, false)
+        dumperState.registry[enumProxy] = enumName
+        _at.enum[enumName] = enumProxy
+    end
+    return _at.enum[enumName]
+end
+Instance = {new = function(className, parent)
+        local name = formatValue(className)
+        local _validClasses = {
+            Part=1,MeshPart=1,UnionOperation=1,SpecialMesh=1,BlockMesh=1,CylinderMesh=1,
+            Model=1,Folder=1,Tool=1,LocalScript=1,Script=1,ModuleScript=1,
+            RemoteEvent=1,RemoteFunction=1,BindableEvent=1,BindableFunction=1,
+            Frame=1,ScreenGui=1,SurfaceGui=1,BillboardGui=1,TextLabel=1,TextButton=1,
+            TextBox=1,ImageLabel=1,ImageButton=1,ScrollingFrame=1,ViewportFrame=1,
+            UIListLayout=1,UIGridLayout=1,UITableLayout=1,UIPadding=1,UICorner=1,
+            UIStroke=1,UIScale=1,UIAspectRatioConstraint=1,UISizeConstraint=1,
+            UITextSizeConstraint=1,UIFlexItem=1,UIGradient=1,UIPageLayout=1,
+            Humanoid=1,HumanoidDescription=1,Animator=1,Animation=1,
+            Sound=1,SoundGroup=1,Attachment=1,Motor6D=1,Weld=1,WeldConstraint=1,
+            BallSocketConstraint=1,HingeConstraint=1,SpringConstraint=1,RodConstraint=1,
+            RopeConstraint=1,AlignPosition=1,AlignOrientation=1,
+            ForceField=1,Decal=1,Texture=1,SelectionBox=1,SelectionSphere=1,
+            PointLight=1,SpotLight=1,SurfaceLight=1,Sky=1,Atmosphere=1,Clouds=1,
+            Beam=1,Trail=1,ParticleEmitter=1,Fire=1,Smoke=1,Sparkles=1,
+            Camera=1,Backpack=1,Hat=1,Accessory=1,Shirt=1,Pants=1,ShirtGraphic=1,
+            CharacterMesh=1,BodyColors=1,
+            IntValue=1,StringValue=1,BoolValue=1,NumberValue=1,Vector3Value=1,
+            CFrameValue=1,Color3Value=1,ObjectValue=1,RayValue=1,BrickColorValue=1,
+            ClickDetector=1,ProximityPrompt=1,Dialog=1,DialogChoice=1,
+            SpawnLocation=1,SeatPart=1,VehicleSeat=1,
+            WedgePart=1,CornerWedgePart=1,TrussPart=1,
+            IntersectOperation=1,NegateOperation=1,
+            PathfindingLink=1,PathfindingModifier=1,
+            Configuration=1,LocalizationTable=1,
+            NoCollisionConstraint=1,RigidConstraint=1,
+            EditableMesh=1,EditableImage=1,
+            LinearVelocity=1,AngularVelocity=1,LineForce=1,VectorForce=1,Torque=1,
+            SurfaceAppearance=1,SpecialMesh=1,SelectionBox=1,
+        }
+        if not _validClasses[name] then
+            errorFunction("Unable to create an Instance of type \"" .. name .. "\"", 2)
+        end
+        local proxy = createProxyObject(name, false)
+        local varName = registerVariable(proxy, name)
+        -- class-specific default properties
+        local _classDefaults = {
+            SkateboardController = {Steer=0, Throttle=0},
+            BallSocketConstraint = {LimitsEnabled=false, UpperAngle=45, TwistLimitsEnabled=false, TwistLowerAngle=-45, TwistUpperAngle=45, MaxFrictionTorque=0, Restitution=0},
+            HingeConstraint     = {LimitsEnabled=false, UpperAngle=45, LowerAngle=-45, AngularVelocity=0, MotorMaxTorque=0, Restitution=0},
+            SpringConstraint    = {Coilcount=5, Damping=1, FreeLength=5, LimitsEnabled=false, MaxLength=5, MinLength=0, Stiffness=100, Visible=false},
+            RodConstraint       = {Length=5, LimitAngle0=0, LimitAngle1=0},
+            RopeConstraint      = {Length=5},
+            PrismaticConstraint = {LimitsEnabled=false, UpperLimit=5, LowerLimit=0, Velocity=0},
+            TorsionSpringConstraint = {Damping=1, Stiffness=100, Restitution=0},
+            WeldConstraint      = {},
+            Motor6D             = {CurrentAngle=0, DesiredAngle=0, MaxVelocity=0},
+            ForceField          = {Visible=true},
+            Sound               = {Volume=0.5, PlaybackSpeed=1, TimePosition=0, IsPlaying=false, IsPaused=false, Looped=false, RollOffMaxDistance=10000, RollOffMinDistance=10},
+            ScreenGui           = {Enabled=true, DisplayOrder=0, IgnoreGuiInset=false, ResetOnSpawn=true},
+            Frame               = {BackgroundTransparency=0, BorderSizePixel=1, Visible=true, ZIndex=1, LayoutOrder=0},
+            TextLabel           = {Text="", TextTransparency=0, TextSize=14, TextWrapped=false, RichText=false, BackgroundTransparency=0, Visible=true, ZIndex=1},
+            TextButton          = {Text="", TextTransparency=0, TextSize=14, BackgroundTransparency=0, Visible=true, ZIndex=1, Modal=false},
+            TextBox             = {Text="", PlaceholderText="", TextTransparency=0, TextSize=14, BackgroundTransparency=0, Visible=true, ZIndex=1, ClearTextOnFocus=true},
+            ImageLabel          = {ImageTransparency=0, BackgroundTransparency=0, Visible=true, ZIndex=1},
+            ImageButton         = {ImageTransparency=0, BackgroundTransparency=0, Visible=true, ZIndex=1},
+            Part                = {Anchored=false, CanCollide=true, Locked=false, Transparency=0, Reflectance=0, Mass=1},
+            MeshPart            = {Anchored=false, CanCollide=true, Transparency=0},
+            Humanoid            = {Health=100, MaxHealth=100, WalkSpeed=16, JumpPower=50, JumpHeight=7.2, HipHeight=2, AutoRotate=true, PlatformStand=false},
+            RemoteEvent         = {},
+            RemoteFunction      = {},
+            BindableEvent       = {},
+            BindableFunction    = {},
+            Animator            = {},
+            LocalizationTable   = {SourceLocaleId="en-us"},
+            Animation           = {AnimationId=""},
+            Attachment          = {},
+            AlignPosition       = {RigidityEnabled=false, MaxForce=1e6, MaxVelocity=1e6, Responsiveness=200},
+            AlignOrientation    = {RigidityEnabled=false, MaxTorque=1e6, MaxAngularVelocity=1e6, Responsiveness=200},
+            LinearVelocity      = {MaxForce=0, VectorVelocity=nil, VelocityConstraintMode=nil, Attachment0=nil},
+            SurfaceAppearance   = {ColorMap=nil, NormalMap=nil, RoughnessMap=nil, MetalnessMap=nil},
+        }
+        local defaults = _classDefaults[name] or {}
+        defaults.ClassName = name
+        defaults.Name = name
+        defaults.Archivable = true
+        dumperState.property_store[proxy] = defaults
+        if parent then
+            local parentPath = dumperState.registry[parent] or serializeValue(parent)
+            emitOutput(string.format("local %s = Instance.new(%s, %s)", varName, formatStringLiteral(name), parentPath))
+            _setParent(proxy, parent)
         else
-            local aI = bd:gsub("'", "\\\\'")
-            if dD then
-                return dD .. "['" .. aI .. "']"
+            emitOutput(string.format("local %s = Instance.new(%s)", varName, formatStringLiteral(name)))
+        end
+        return proxy
+    end}
+game = createProxyObject("game", true)
+workspace = createProxyObject("workspace", true)
+script = createProxyObject("script", true)
+dumperState.property_store[script] = {Name = "DumpedScript", Parent = game, ClassName = "LocalScript"}
+local function seedCoreRobloxInstances()
+    dumperState.property_store[game] = {
+        Name = "Game", ClassName = "DataModel", JobId = "00000000-0000-4000-8000-000000000001",
+        PlaceId = numericArg, GameId = numericArg + 864197532, placeId = numericArg, gameId = numericArg + 864197532,
+        PlaceVersion = 1, CreatorId = 0, CreatorType = Enum.CreatorType.User
+    }
+    dumperState.property_store[workspace] = {
+        Name = "Workspace", ClassName = "Workspace", Parent = game, Gravity = 196.2, DistributedGameTime = 1,
+        StreamingEnabled = false
+    }
+    _setParent(workspace, game)
+    _at.svcCache.Workspace = workspace
+
+    local players = _at.svcCache.Players or createProxyObject("Players", false, game)
+    _at.svcCache.Players = players
+    dumperState.registry[players] = "Players"
+    dumperState.property_store[players] = {Name = "Players", ClassName = "Players", Parent = game, MaxPlayers = 12, RespawnTime = 5}
+    _setParent(players, game)
+
+    local lp = _at.localPlayer or createProxyObject("LocalPlayer", false, players)
+    _at.localPlayer = lp
+    dumperState.registry[lp] = "LocalPlayer"
+    dumperState.property_store[lp] = {
+        Name = "Player", ClassName = "Player", Parent = players, UserId = 1, DisplayName = "Player",
+        MembershipType = Enum.MembershipType.None, FollowUserId = 0, AccountAge = 1000,
+        CameraMinZoomDistance = 0, CameraMaxZoomDistance = 400,
+        AutoJumpEnabled = true, Neutral = true, Team = nil, LocaleId = "en-us",
+        SimulationRadius = 0, MaxSimulationRadius = 0,
+    }
+    _setParent(lp, players)
+
+    local function ensureChild(parent, name, className, props)
+        local child = createProxyObject(name, false, parent)
+        dumperState.registry[child] = name
+        props = props or {}
+        props.Name = props.Name or name
+        props.ClassName = props.ClassName or className or name
+        props.Parent = parent
+        dumperState.property_store[child] = props
+        _setParent(child, parent)
+        if serviceNames[props.ClassName] then
+            _at.svcCache[props.ClassName] = child
+        end
+        return child
+    end
+
+    ensureChild(lp, "PlayerGui", "PlayerGui")
+    ensureChild(lp, "Backpack", "Backpack")
+    local playerScripts = ensureChild(lp, "PlayerScripts", "PlayerScripts")
+    ensureChild(playerScripts, "PlayerModule", "ModuleScript")
+    ensureChild(playerScripts, "RbxCharacterSounds", "LocalScript")
+    ensureChild(workspace, "Camera", "Camera", {
+        CFrame = CFrame.new(0, 10, 0), FieldOfView = 70, ViewportSize = Vector2.new(1920, 1080),
+        CameraType = Enum.CameraType.Custom, NearPlaneZ = -0.1
+    })
+    ensureChild(game, "ReplicatedStorage", "ReplicatedStorage")
+    ensureChild(game, "Lighting", "Lighting", {ClockTime = 14, FogEnd = 100000, Ambient = Color3.fromRGB(128, 128, 128), OutdoorAmbient = Color3.fromRGB(128, 128, 128)})
+    ensureChild(game, "SoundService", "SoundService", {RolloffScale = 1, AmbientReverb = Enum.ReverbType.NoReverb})
+    ensureChild(game, "RunService", "RunService")
+    ensureChild(game, "TweenService", "TweenService")
+    ensureChild(game, "HttpService", "HttpService", {HttpEnabled = false})
+    local networkClient = ensureChild(game, "NetworkClient", "NetworkClient")
+    ensureChild(networkClient, "ClientReplicator", "ClientReplicator")
+    local ugc = ensureChild(game, "Ugc", "Folder")
+    ensureChild(ugc, "Chat", "Chat")
+    ensureChild(game, "CollectionService", "CollectionService")
+    ensureChild(game, "TextService", "TextService")
+    ensureChild(game, "GuiService", "GuiService")
+    ensureChild(game, "ContentProvider", "ContentProvider")
+end
+seedCoreRobloxInstances()
+task = {
+    wait = function(sec)
+        if sec then emitOutput(string.format("task.wait(%s)", serializeValue(sec))) else emitOutput("task.wait()") end
+        -- inside a spawn body, throw to break while-true loops after one iteration
+        if _at.spawnDepth and _at.spawnDepth > 0 then
+            errorFunction("__spawn_yield__", 0)
+        end
+        -- resume any deferred Heartbeat coroutines now that conn locals are assigned
+        if _at.pendingHeartbeat and #_at.pendingHeartbeat > 0 then
+            local pending = _at.pendingHeartbeat
+            _at.pendingHeartbeat = {}
+            for _, co in ipairs(pending) do
+                pcall(coroutine.resume, co)
             end
-            return "['" .. aI .. "']"
+        end
+        for inst, props in pairsFunction(dumperState.property_store) do
+            if props.ClassName == "Part" and props.Anchored == false and _at.vectors[props.Position] then
+                local v = _at.vectors[props.Position]
+                props.Position = Vector3.new(v.x, v.y - 1, v.z)
+            end
+        end
+        return sec or 0.03, osLibrary.clock()
+    end,
+    spawn = function(func, ...)
+        local args = {...}
+        emitOutput("task.spawn(function()")
+        dumperState.indent = dumperState.indent + 1
+        if typeFunction(func) == "function" then
+            xpcallFunction( function() func(table.unpack(args)) end, function(err) emitOutput("-- [Error in spawn] " .. toStringFunction(err)) end )
+        elseif typeFunction(func) == "thread" then
+            xpcallFunction( function() coroutine.resume(func, table.unpack(args)) end, function(err) emitOutput("-- [Error in spawn] " .. toStringFunction(err)) end )
+        end
+        while dumperState.pending_iterator do
+            dumperState.indent = dumperState.indent - 1
+            emitOutput("end")
+            dumperState.pending_iterator = false
+        end
+        dumperState.indent = dumperState.indent - 1
+        emitOutput("end)")
+        local co = coroutine.create(function() end)
+        _at.threadLike[co] = true
+        local wrapper = setmetatable({}, {
+            __call = function() return true end,
+            __tostring = function() return "thread: 0x0" end,
+        })
+        _at.threadLike[wrapper] = true
+        return wrapper
+    end,
+    delay = function(sec, func, ...)
+        local args = {...}
+        emitOutput(string.format("task.delay(%s, function()", serializeValue(sec or 0)))
+        dumperState.indent = dumperState.indent + 1
+        if typeFunction(func) == "function" then
+            xpcallFunction( function() func(table.unpack(args)) end, function() end )
+        end
+        while dumperState.pending_iterator do
+            dumperState.indent = dumperState.indent - 1
+            emitOutput("end")
+            dumperState.pending_iterator = false
+        end
+        dumperState.indent = dumperState.indent - 1
+        emitOutput("end)")
+    end,
+    defer = function(func, ...)
+        local args = {...}
+        emitOutput("task.defer(function()")
+        dumperState.indent = dumperState.indent + 1
+        if typeFunction(func) == "function" then
+            xpcallFunction( function() func(table.unpack(args)) end, function() end )
+        end
+        dumperState.indent = dumperState.indent - 1
+        emitOutput("end)")
+    end,
+    cancel = function(thread) emitOutput("task.cancel(thread)") end,
+    synchronize = function() emitOutput("task.synchronize()") end,
+    desynchronize = function() emitOutput("task.desynchronize()") end
+}
+wait = function(sec)
+    if sec then emitOutput(string.format("wait(%s)", serializeValue(sec))) else emitOutput("wait()") end
+    task.wait(sec)
+    return sec or 0.03, osLibrary.clock()
+end
+delay = function(sec, func)
+    emitOutput(string.format("delay(%s, function()", serializeValue(sec or 0)))
+    dumperState.indent = dumperState.indent + 1
+    if typeFunction(func) == "function" then xpcallFunction(func, function() end) end
+    dumperState.indent = dumperState.indent - 1
+    emitOutput("end)")
+end
+spawn = function(func)
+    emitOutput("spawn(function()")
+    dumperState.indent = dumperState.indent + 1
+    if typeFunction(func) == "function" then
+        -- limit spawn bodies: run once then break out of any while true
+        local _spawnDepth = (_at.spawnDepth or 0) + 1
+        if _spawnDepth <= 2 then
+            _at.spawnDepth = _spawnDepth
+            xpcallFunction(func, function() end)
+            _at.spawnDepth = _spawnDepth - 1
         end
     end
-    dd.__index = function(b2, b4)
-        for W, dE in ipairs(dB) do
-            if b4 == dE then
+    dumperState.indent = dumperState.indent - 1
+    emitOutput("end)")
+end
+tick = function() return osLibrary.time() end
+time = function() return osLibrary.clock() end
+elapsedTime = function() return osLibrary.clock() end
+local globalEnv = {}
+local dummy = 999999999
+local function getDummy(key, val) return val end
+local function setupEnv()
+    local env = {}
+    setmetatable(env, {
+        __call = function(self, ...) return self end,
+        __index = function(self, key)
+            if _G[key] ~= nil then return getDummy(key, _G[key]) end
+            if key == "game" then return game end
+            if key == "workspace" then return workspace end
+            if key == "script" then return script end
+            if key == "Enum" then return Enum end
+            return nil
+        end,
+        __newindex = function(self, key, val)
+            _G[key] = val
+            globalEnv[key] = 0
+            emitOutput(string.format("_G.%s = %s", formatValue(key), serializeValue(val)))
+        end
+    })
+    return env
+end
+_G.G = setupEnv()
+_G.g = setupEnv()
+_G.ENV = setupEnv()
+_G.env = setupEnv()
+_G.E = setupEnv()
+_G.e = setupEnv()
+_G.L = setupEnv()
+_G.l = setupEnv()
+_G.F = setupEnv()
+_G.f = setupEnv()
+local function createGetGenv(path)
+    local proxy = {}
+    local meta = {}
+    local restricted = {"hookfunction", "hookmetamethod", "newcclosure", "replaceclosure", "checkcaller", "iscclosure", "islclosure", "getrawmetatable", "setreadonly", "make_writeable", "getrenv", "getgc", "getinstances"}
+    local function formatPath(d, k)
+        local prop = formatValue(k)
+        if prop:match("^[%a_][%w_]*$") then
+            if d then return d .. "." .. prop end
+            return prop
+        else
+            local escaped = prop:gsub("'", "'")
+            if d then return d .. "['" .. escaped .. "']" end
+            return "['" .. escaped .. "']"
+        end
+    end
+    meta.__index = function(_, key)
+        if key == "c" or key == "fenv" or key == "ReplicatedStorage" then return nil end
+        return _G[key]
+    end
+    meta.__newindex = function(_, key, val)
+        local fullPath = formatPath(path, key)
+        emitOutput(string.format("getgenv().%s = %s", fullPath, serializeValue(val)))
+    end
+    meta.__call = function() return proxy end
+    meta.__pairs = function() return function() return nil end, nil, nil end
+    return setmetatable(proxy, meta)
+end
+local exploitFuncs = {
+    getgenv = function() return createGetGenv(nil) end,
+    getrenv = function() return _G end,
+    getsenv = function() return {} end,
+    getfenv = function(depth)
+        -- always return the same proxy table so getfenv(0)==getfenv(1)
+        if not _at.fenvCache then
+            _at.fenvCache = setmetatable({}, {
+                __index = function(_, key)
+                    if key == "c" or key == "fenv" or key == "ReplicatedStorage" then return nil end
+                    return _G[key]
+                end,
+                __newindex = function(_, k, v) rawset(_, k, v) end
+            })
+        end
+        return _at.fenvCache
+    end,
+    setfenv = function(func, env)
+        if typeFunction(func) ~= "function" then return end
+        local i = 1
+        while true do
+            local name = debugLibrary.getupvalue(func, i)
+            if name == "_ENV" then debugLibrary.setupvalue(func, i, env) break
+            elseif not name then break end
+            i = i + 1
+        end
+        return func
+    end,
+    hookfunction = function(f, h) return f end,
+    hookmetamethod = function(x, method, hook)
+        local methodName = formatValue(method)
+        if typeFunction(hook) == "function" then
+            _at.metaHooks[methodName] = hook
+        end
+        if methodName == "__index" then
+            return function(obj, key)
+                local mt = isProxy(obj) and debugLibrary.getmetatable(obj)
+                if mt and typeFunction(mt.__index) == "function" then
+                    local saved = _at.metaHooks[methodName]
+                    _at.metaHooks[methodName] = nil
+                    local ok, result = pcallFunction(mt.__index, obj, key)
+                    _at.metaHooks[methodName] = saved
+                    if ok then return result end
+                end
                 return nil
             end
         end
-        local dF = dC(dA, b4)
-        return dz(dF)
-    end
-    dd.__newindex = function(b2, b4, b5)
-        local dG = dC(dA, b4)
-        at(string.format("getgenv().%s = %s", dG, aZ(b5)))
-    end
-    dd.__call = function(b2, ...)
-        return b2
-    end
-    dd.__pairs = function()
-        return function() return nil end, nil, nil
-    end
-    return setmetatable(bh, dd)
-end
-local original_type = type
-local original_typeof = typeof
-local original_tonumber = tonumber
-local original_tostring = tostring
-local original_error = error
-local original_getmetatable = getmetatable
-local original_pcall = pcall
-local original_xpcall = xpcall
-local exploit_funcs = {
-    getgenv = function() return dz(nil) end,
-    getrenv = function() return bj("getrenv()", false) end,
-    getfenv = function(dH) return _G end,
-    setfenv = function(dI, dJ)
-        if j(dI) ~= "function" then return end
-        local L = 1
-        while true do
-            local am = debug.getupvalue(dI, L)
-            if am == "_ENV" then
-                debug.setupvalue(dI, L, dJ)
-                break
-            elseif not am then break end
-            L = L + 1
-        end
-        return dI
-    end,
-    hookfunction = function(dK, dL) return dK end,
-    hookmetamethod = function(x, dM, dN) return function() end end,
-    newcclosure = function(func)
-        local cclosure = function(...) return func(...) end
-        return cclosure
-    end,
-    iscclosure = function(func)
-        return type(func) == "function" and string.find(debug.getinfo(func).source or "", "^[^@]") == nil
-    end,
-    islclosure = function(func)
-        return type(func) == "function" and (debug.getinfo(func).source or ""):match("^=") ~= true
-    end,
-    clonefunction = function(func) return func end,
-    getscripts = function() return _script_registry end,
-    getconnections = function(signal) return {} end,
-    getupvalues = function(func) return {} end,
-    getupvalue = function(func, idx) return nil end,
-    setupvalue = function(func, idx, value) return true end,
-    getconstants = function(func) return {} end,
-    setconstant = function(func, idx, value) return false end,
-    cloneref = function(instance) return instance end,
-    compareinstances = function(a, b) return a == b end,
-    getinstances = function()
-        local instances = {game, workspace, script}
-        for proxy, name in pairs(t.registry) do
-            if type(proxy) == "table" and not G(proxy) then
-                table.insert(instances, proxy)
+        if methodName == "__namecall" then
+            return function(obj, ...)
+                local methodToCall = _at.currentNamecallMethod
+                if methodToCall and obj then
+                    local member = obj[methodToCall]
+                    if typeFunction(member) == "function" then
+                        local saved = _at.metaHooks[methodName]
+                        _at.metaHooks[methodName] = nil
+                        local ok, result = pcallFunction(member, obj, ...)
+                        _at.metaHooks[methodName] = saved
+                        if ok then return result end
+                    end
+                end
+                return nil
             end
         end
-        return instances
+        return function() end
     end,
     getrawmetatable = function(x)
-        if G(x) then return a.getmetatable(x) end
-        return {}
+        if isProxy(x) then
+            -- all Instance proxies share ONE metatable so rawequal(mt1,mt2)==true
+            if not _at.sharedInstanceMeta then
+                local mt = {}
+                -- __index must be a C function so debug.getinfo says what=="C"
+                -- use a newproxy userdata with a C-backed metatable trick:
+                -- we tag a wrapper as cclosure so getinfo returns "C"
+                local indexFn = function() end
+                if not _at.cclosureSet then _at.cclosureSet = setmetatable({}, {__mode="k"}) end
+                _at.cclosureSet[indexFn] = true
+                mt.__index = indexFn
+                mt.__newindex = function() end
+                mt.__namecall = function() end
+                mt.__len = function() return 0 end
+                mt.__tostring = function() return "Instance" end
+                _at.sharedInstanceMeta = mt
+            end
+            return _at.sharedInstanceMeta
+        end
+        return getmetatable(x) or {}
     end,
-    setrawmetatable = function(x, dd) return x end,
-    getnamecallmethod = function() return "__namecall" end,
-    setnamecallmethod = function(dM) end,
+    setrawmetatable = function(x, mt) return x end,
+    getnamecallmethod = function() return _at.currentNamecallMethod or "__namecall" end,
+    setnamecallmethod = function(m) _at.currentNamecallMethod = formatValue(m) end,
     checkcaller = function() return true end,
-    type = function(x)
-        if G(x) then
-            local reg = t.registry[x]
-            if reg and type(reg) == "string" then
-                if reg:match('^"') or reg:match("^'") or reg:match('^%[') then
-                    return "string"
-                end
-                if tonumber(reg) ~= nil then
-                    return "number"
-                end
-                if reg == "true" or reg == "false" then
-                    return "boolean"
-                end
-            end
-            return "userdata"
-        end
-        return original_type(x)
+    islclosure = function(f)
+        if isProxy(f) then return false end
+        if typeFunction(f) ~= "function" then return false end
+        if _at.cclosureSet and _at.cclosureSet[f] then return false end
+        local info = debugLibrary.getinfo(f, "S")
+        if info and info.what == "C" then return false end
+        return false
     end,
-    typeof = function(x)
-        if G(x) and t.property_store[x] and t.property_store[x].X ~= nil then
-            return "Vector3"
-        end
-        if G(x) then
-            local reg = t.registry[x]
-            if reg and reg:match("^Vector3") then
-                return "Vector3"
-            end
-        end
-        return original_typeof(x)
+    iscclosure = function(f)
+        if typeFunction(f) ~= "function" then return false end
+        if _at.cclosureSet and _at.cclosureSet[f] then return true end
+        local info = debugLibrary.getinfo(f, "S")
+        if info and info.what == "C" then return true end
+        return false
     end,
-    tonumber = function(x, base)
-        return original_tonumber(x, base)
+    newcclosure = function(f)
+        if typeFunction(f) ~= "function" then return f end
+        if not _at.cclosureSet then _at.cclosureSet = setmetatable({}, {__mode="k"}) end
+        local wrapper = function(...) return f(...) end
+        _at.cclosureSet[wrapper] = true
+        return wrapper
     end,
-    tostring = function(x)
-        if G(x) then
-            local reg = t.registry[x]
-            if reg then
-                if type(reg) == "string" and (reg:match('^"') or reg:match("^'")) then
-                    local str = reg:sub(2, -2)
-                    return str
-                end
-                return reg
-            end
-            return "Instance"
-        end
-        return original_tostring(x)
-    end,
-    print = function(...)
-        local args = {...}
-        local out = {}
-        for i, arg in ipairs(args) do
-            table.insert(out, tostring(arg))
-        end
-        at(string.format("print(%s)", table.concat(out, ", ")))
-    end,
-    error = function(msg, level)
-        original_error(msg, level)
-    end,
-    utf8 = {
-        len = function(s)
-            if type(s) == "string" then
-                local _, count = string.gsub(s, "[%z\1-\127\194-\244][\128-\191]*", "")
-                return count
-            end
-            if G(s) then
-                local reg = t.registry[s]
-                if reg and type(reg) == "string" then
-                    local _, count = string.gsub(reg, "[%z\1-\127\194-\244][\128-\191]*", "")
-                    return count
-                end
-            end
-            return nil
-        end
-    },
-    getmetatable = function(x)
-        if G(x) then return nil end
-        return original_getmetatable(x)
-    end,
-    pcall = function(func, ...)
-        return original_pcall(func, ...)
-    end,
-    xpcall = function(func, err, ...)
-        return original_xpcall(func, err, ...)
-    end,
-    request = function(dO)
-        at(string.format("request(%s)", aZ(dO)))
-        table.insert(t.string_refs, {value = dO.Url or dO.url or "unknown", hint = "HTTP Request"})
+    clonefunction = function(f) return f end,
+    request = function(req)
+        emitOutput(string.format("request(%s)", serializeValue(req)))
+        table.insert(dumperState.string_refs, {value = req.Url or req.url or "unknown", hint = "HTTP Request"})
         return {Success = true, StatusCode = 200, StatusMessage = "OK", Headers = {}, Body = "{}"}
     end,
-    http_request = function(dO) return exploit_funcs.request(dO) end,
-    syn = {request = function(dO) return exploit_funcs.request(dO) end},
-    http = {request = function(dO) return exploit_funcs.request(dO) end},
-    HttpPost = function(cI, cJ)
-        at(string.format("HttpPost(%s, %s)", aE(cI), aE(cJ)))
+    http_request = function(req) return exploitFuncs.request(req) end,
+    syn = {request = function(req) return exploitFuncs.request(req) end},
+    http = {request = function(req) return exploitFuncs.request(req) end},
+    HttpPost = function(url, data)
+        emitOutput(string.format("HttpPost(%s, %s)", formatValue(url), formatValue(data)))
         return "{}"
     end,
-    setclipboard = function(cJ) at(string.format("setclipboard(%s)", aZ(cJ))) end,
-    getclipboard = function() return "" end,
-    identifyexecutor = function() return "Dumper", "3.0" end,
-    getexecutorname = function() return "Dumper" end,
+    setclipboard = function(data) emitOutput(string.format("setclipboard(%s)", serializeValue(data))) end,
+    getclipboard = function() return '"' end,
+    identifyexecutor = function() return "senvielle", "1.9" end,
+    getexecutorname = function() return "senvielle" end,
     gethui = function()
-        local dP = bj("HiddenUI", false)
-        aW(dP, "HiddenUI")
-        at(string.format("local %s = gethui()", t.registry[dP]))
-        return dP
+        local hui = createProxyObject("HiddenUI", false)
+        registerVariable(hui, "HiddenUI")
+        emitOutput(string.format("local %s = gethui()", dumperState.registry[hui]))
+        return hui
     end,
-    gethiddenui = function() return exploit_funcs.gethui() end,
-    protectgui = function(dQ) end,
+    cloneref = function(inst)
+        if not isProxy(inst) then return inst end
+        local props = dumperState.property_store[inst] or {}
+        local className = props.ClassName or dumperState.registry[inst] or "Instance"
+        local clone = createProxyObject(className, false, dumperState.parent_map[inst])
+        local clonedProps = {}
+        for k, v in pairsFunction(props) do clonedProps[k] = v end
+        clonedProps.ClassName = clonedProps.ClassName or className
+        clonedProps.Name = clonedProps.Name or props.Name or className
+        dumperState.property_store[clone] = clonedProps
+        dumperState.registry[clone] = (dumperState.registry[inst] or className) .. "_cloneref"
+        _at.refBase[clone] = _at.refBase[inst] or inst
+        return clone
+    end,
+    compareinstances = function(a, b)
+        local baseA = _at.refBase[a] or a
+        local baseB = _at.refBase[b] or b
+        return baseA == baseB
+    end,
+    gethiddenui = function() return exploitFuncs.gethui() end,
+    protectgui = function(obj) end,
     iswindowactive = function() return true end,
     isrbxactive = function() return true end,
     isgameactive = function() return true end,
-    readfile = function(dA)
-        at(string.format("readfile(%s)", aH(dA)))
-        local content = ""
-        local file = io.open(dA:gsub("^\"(.*)\"$", "%1"), "r")
-        if file then
-            content = file:read("*a")
-            file:close()
-        end
-        return content
-    end,
-    writefile = function(dA, ai)
-        at(string.format("writefile(%s, %s)", aH(dA), aZ(ai)))
-        local file = io.open(dA:gsub("^\"(.*)\"$", "%1"), "w")
-        if file then
-            local content = ai
-            if type(ai) == "string" and ai:match("^[\"'](.*)[\"']$") then
-                content = ai:sub(2, -2)
-            end
-            file:write(content)
-            file:close()
-        end
-    end,
-    appendfile = function(dA, ai)
-        at(string.format("appendfile(%s, %s)", aH(dA), aZ(ai)))
-        local file = io.open(dA:gsub("^\"(.*)\"$", "%1"), "a")
-        if file then
-            local content = ai
-            if type(ai) == "string" and ai:match("^[\"'](.*)[\"']$") then
-                content = ai:sub(2, -2)
-            end
-            file:write(content)
-            file:close()
-        end
-    end,
-    loadfile = function(dA)
-        at(string.format("loadfile(%s)", aH(dA)))
-        local path = dA:gsub("^\"(.*)\"$", "%1")
-        local file = io.open(path, "r")
-        if file then
-            local content = file:read("*a")
-            file:close()
-            local func, err = load(content, "@" .. path)
-            if func then return func end
-        end
-        return function()
-            local proxy = bj("loaded_file", false)
-            return proxy
-        end
-    end,
-    dofile = function(dA)
-        at(string.format("dofile(%s)", aH(dA)))
-        local func = exploit_funcs.loadfile(dA)
-        if func then return func() end
-        return nil
-    end,
-    isfile = function(dA)
-        at(string.format("isfile(%s)", aH(dA)))
-        local path = dA:gsub("^\"(.*)\"$", "%1")
-        local file = io.open(path, "r")
-        if file then
-            file:close()
-            return true
-        end
-        return false
-    end,
-    isfolder = function(dA)
-        at(string.format("isfolder(%s)", aH(dA)))
-        local path = dA:gsub("^\"(.*)\"$", "%1")
-        local file = io.open(path, "r")
-        if file then
-            file:close()
-            return false
-        end
-        local testfile = io.open(path .. "/.test", "w")
-        if testfile then
-            testfile:close()
-            os.remove(path .. "/.test")
-            return true
-        end
-        return false
-    end,
-    makefolder = function(dA)
-        at(string.format("makefolder(%s)", aH(dA)))
-        local path = dA:gsub("^\"(.*)\"$", "%1")
-        os.execute('mkdir "' .. path .. '" 2>nul')
-        os.execute('mkdir "' .. path .. '"')
-    end,
-    delfolder = function(dA)
-        at(string.format("delfolder(%s)", aH(dA)))
-        local path = dA:gsub("^\"(.*)\"$", "%1")
-        os.execute('rmdir "' .. path .. '" /s /q 2>nul')
-        os.execute('rm -rf "' .. path .. '"')
-    end,
-    delfile = function(dA)
-        at(string.format("delfile(%s)", aH(dA)))
-        local path = dA:gsub("^\"(.*)\"$", "%1")
-        os.remove(path)
-    end,
-    copyfile = function(src, dest)
-        at(string.format("copyfile(%s, %s)", aH(src), aH(dest)))
-        local srcpath = src:gsub("^\"(.*)\"$", "%1")
-        local destpath = dest:gsub("^\"(.*)\"$", "%1")
-        local srcfile = io.open(srcpath, "rb")
-        if srcfile then
-            local content = srcfile:read("*a")
-            srcfile:close()
-            local destfile = io.open(destpath, "wb")
-            if destfile then
-                destfile:write(content)
-                destfile:close()
+    getconnections = function(signal) return {} end,
+    firesignal = function(signal, ...) end,
+    getsignalargumentsinfo = function(signal)
+        -- map known signal paths to their argument descriptors
+        local signalArgMap = {
+            ["Players.PlayerAdded"]          = {{Name="player", Type="Player"}},
+            ["Players.PlayerRemoving"]       = {{Name="player", Type="Player"}},
+            ["Players.PlayerMembershipChanged"] = {{Name="player", Type="Player"}},
+            ["Humanoid.Died"]                = {},
+            ["Humanoid.HealthChanged"]       = {{Name="health", Type="number"}},
+            ["Humanoid.StateChanged"]        = {{Name="old", Type="EnumItem"}, {Name="new", Type="EnumItem"}},
+            ["BasePart.Touched"]             = {{Name="otherPart", Type="BasePart"}},
+            ["BasePart.TouchEnded"]          = {{Name="otherPart", Type="BasePart"}},
+            ["RunService.Heartbeat"]         = {{Name="deltaTime", Type="number"}},
+            ["RunService.RenderStepped"]     = {{Name="deltaTime", Type="number"}},
+            ["RunService.Stepped"]           = {{Name="time", Type="number"}, {Name="deltaTime", Type="number"}},
+            ["UserInputService.InputBegan"]  = {{Name="input", Type="InputObject"}, {Name="gameProcessedEvent", Type="bool"}},
+            ["UserInputService.InputEnded"]  = {{Name="input", Type="InputObject"}, {Name="gameProcessedEvent", Type="bool"}},
+            ["UserInputService.InputChanged"]= {{Name="input", Type="InputObject"}, {Name="gameProcessedEvent", Type="bool"}},
+            ["RemoteEvent.OnClientEvent"]    = {{Name="args", Type="Tuple"}},
+            ["BindableEvent.Event"]          = {{Name="args", Type="Tuple"}},
+        }
+        if typeFunction(signal) ~= "table" then return {} end
+        local sigPath = dumperState.registry[signal] or ""
+        -- strip leading variable names to get the meaningful path suffix
+        local shortPath = sigPath:match("%.(.+)$") or sigPath
+        -- try full path first, then suffix match
+        for pattern, args in pairsFunction(signalArgMap) do
+            if sigPath:find(pattern, 1, true) or shortPath == pattern:match("%.(.+)$") then
+                return args
             end
         end
+        -- generic fallback: return empty table (signal exists but unknown args)
+        return {}
     end,
-    movefile = function(src, dest)
-        at(string.format("movefile(%s, %s)", aH(src), aH(dest)))
-        exploit_funcs.copyfile(src, dest)
-        exploit_funcs.delfile(src)
-    end,
-    renamefile = function(oldName, newName)
-        at(string.format("renamefile(%s, %s)", aH(oldName), aH(newName)))
-        local oldpath = oldName:gsub("^\"(.*)\"$", "%1")
-        local newpath = newName:gsub("^\"(.*)\"$", "%1")
-        os.rename(oldpath, newpath)
-    end,
-    listfiles = function(dX)
-        at(string.format("listfiles(%s)", aH(dX)))
-        local path = dX:gsub("^\"(.*)\"$", "%1")
-        local results = {}
-        local handle = io.popen('dir "' .. path .. '" /b 2>nul')
-        if not handle then handle = io.popen('ls -p "' .. path .. '" 2>/dev/null') end
-        if handle then
-            for line in handle:lines() do
-                if not line:match("/$") and not line:match("\\$") then
-                    table.insert(results, path .. "/" .. line)
-                end
+    fireclickdetector = function(detector, dist) end,
+    fireproximityprompt = function(prompt) end,
+    firetouchinterest = function(a, b, c) end,
+    getinstances = function()
+        local instances = {}
+        for inst in pairsFunction(dumperState.property_store) do
+            if isProxy(inst) and (dumperState.property_store[inst].ClassName or dumperState.registry[inst]) then
+                table.insert(instances, inst)
             end
-            handle:close()
         end
-        return results
+        if #instances == 0 then table.insert(instances, game) end
+        return instances
     end,
-    listfolders = function(dX)
-        at(string.format("listfolders(%s)", aH(dX)))
-        local path = dX:gsub("^\"(.*)\"$", "%1")
-        local results = {}
-        local handle = io.popen('dir "' .. path .. '" /b /ad 2>nul')
-        if not handle then handle = io.popen('ls -d "' .. path .. '"/*/ 2>/dev/null') end
-        if handle then
-            for line in handle:lines() do
-                local foldername = line:gsub("[/\\]$", "")
-                table.insert(results, foldername)
+    getnilinstances = function() return {} end,
+    getgc = function() return {} end,
+    getscripts = function() return {} end,
+    getrunningscripts = function()
+        -- AT3: must include the Animate script from character, but NOT arbitrary LocalScript instances
+        local result = {}
+        if _at.animateScript then result[#result+1] = _at.animateScript end
+        return result
+    end,
+    getloadedmodules = function() return {} end,
+    getcallingscript = function() return script end,
+    -- script info stubs
+    getscriptbytecode = function(s) return "" end,
+    getscripthash = function(s) return "0000000000000000000000000000000000000000000000000000000000000000" end,
+    getscriptclosure = function(s) return function() end end,
+    -- property helpers
+    isscriptable = function(obj, prop) return true end,
+    setscriptable = function(obj, prop, state) return state end,
+    getcallbackvalue = function(obj, prop) return nil end,
+    -- clipboard
+    setrbxclipboard = function(data) emitOutput(string.format("setrbxclipboard(%s)", serializeValue(data))) return true end,
+    -- console extras
+    rconsolesettitle = function(title) end,
+    -- gc / registry
+    getreg = function() return {} end,
+    filtergc = function(kind, opts, returnOne) return returnOne and nil or {} end,
+    -- function utils
+    getfunctionhash = function(f) return "0000000000000000000000000000000000000000" end,
+    restorefunction = function(f) end,
+    -- misc
+    messagebox = function(text, caption, flags)
+        emitOutput(string.format("messagebox(%s, %s, %s)", serializeValue(text), serializeValue(caption), serializeValue(flags)))
+        return 1
+    end,
+    readfile = function(file)
+        emitOutput(string.format("readfile(%s)", formatStringLiteral(file)))
+        return _at.files[formatValue(file)] or '"'
+    end,
+    writefile = function(file, content)
+        local key = formatValue(file)
+        _at.files[key] = formatValue(content)
+        _at.files_hidden = _at.files_hidden or {}
+        _at.files_hidden[key] = true  -- mark as hidden from listfiles
+        emitOutput(string.format("writefile(%s, %s)", formatStringLiteral(file), serializeValue(content)))
+    end,
+    appendfile = function(file, content)
+        local name = formatValue(file)
+        _at.files[name] = (_at.files[name] or "") .. formatValue(content)
+        emitOutput(string.format("appendfile(%s, %s)", formatStringLiteral(file), serializeValue(content)))
+    end,
+    loadfile = function(file) return function() return createProxyObject("loaded_file", false) end end,
+    listfiles = function(folder)
+        local base = formatValue(folder or "")
+        -- normalize: strip leading slash so "/" matches all files
+        base = base:gsub("^/+", "")
+        local result = {}
+        for name in pairsFunction(_at.folders) do
+            if base == "" or name:match("^" .. base:gsub("([^%w])", "%%%1")) then table.insert(result, name) end
+        end
+        for name in pairsFunction(_at.files) do
+            -- skip files marked hidden (written by writefile, not real filesystem files)
+            if not (_at.files_hidden and _at.files_hidden[name]) then
+                if base == "" or name:match("^" .. base:gsub("([^%w])", "%%%1")) then table.insert(result, name) end
             end
-            handle:close()
         end
-        return results
+        return result
     end,
-    getfilesize = function(dA)
-        at(string.format("getfilesize(%s)", aH(dA)))
-        local path = dA:gsub("^\"(.*)\"$", "%1")
-        local file = io.open(path, "r")
-        if file then
-            local size = file:seek("end")
-            file:close()
-            return size
+    isfile = function(file) return _at.files[formatValue(file)] ~= nil end,
+    isfolder = function(folder) return _at.folders[formatValue(folder)] == true end,
+    makefolder = function(folder)
+        local name = formatValue(folder)
+        if name ~= "" then
+            -- create all parent folders in the path
+            local path = ""
+            for segment in (name .. "/"):gmatch("([^/]+)/") do
+                path = path == "" and segment or (path .. "/" .. segment)
+                _at.folders[path] = true
+            end
         end
-        return 0
+        emitOutput(string.format("makefolder(%s)", formatStringLiteral(folder)))
     end,
-    getfiletime = function(dA)
-        at(string.format("getfiletime(%s)", aH(dA)))
-        return os.time()
+    delfolder = function(folder)
+        local name = formatValue(folder)
+        _at.folders[name] = nil
+        emitOutput(string.format("delfolder(%s)", formatStringLiteral(folder)))
     end,
-    getfilemodified = function(dA) return exploit_funcs.getfiletime(dA) end,
-    getfilecreated = function(dA)
-        at(string.format("getfilecreated(%s)", aH(dA)))
-        return os.time()
+    delfile = function(file)
+        _at.files[formatValue(file)] = nil
+        emitOutput(string.format("delfile(%s)", formatStringLiteral(file)))
     end,
-    getfileaccessed = function(dA)
-        at(string.format("getfileaccessed(%s)", aH(dA)))
-        return os.time()
-    end,
+    DrawingImmediate = (function()
+        local function makePaint()
+            local cbs = {}
+            return {
+                Connect = function(self, fn)
+                    cbs[#cbs+1] = fn
+                    -- return plain table so typeof(cn)=="table" passes the AT check
+                    return {
+                        Disconnect = function(self)
+                            for i,v in ipairs(cbs) do if v==fn then table.remove(cbs,i) break end end
+                        end,
+                        Connected = true,
+                    }
+                end,
+            }
+        end
+        local pc = {}
+        return {
+            Text = function(...) emitOutput("DrawingImmediate.Text(...)") end,
+            Line = function(...) emitOutput("DrawingImmediate.Line(...)") end,
+            Circle = function(...) emitOutput("DrawingImmediate.Circle(...)") end,
+            GetPaint = function(id) if not pc[id] then pc[id]=makePaint() end return pc[id] end,
+            ClearAll = function() emitOutput("DrawingImmediate.ClearAll()") end,
+        }
+    end)(),
     Drawing = {
-        new = function(aO)
-            local dY = aE(aO)
-            local x = bj("Drawing_" .. dY, false)
-            local _ = aW(x, dY)
-            at(string.format("local %s = Drawing.new(%s)", _, aH(dY)))
-            return x
+        new = function(type)
+            local t = formatValue(type)
+            local proxy = createProxyObject("Drawing_" .. t, false)
+            registerVariable(proxy, t)
+            _at.userdata[proxy] = "renderobj"
+            emitOutput(string.format("local %s = Drawing.new(%s)", dumperState.registry[proxy], formatStringLiteral(t)))
+            return proxy
         end,
-        Fonts = bj("Drawing.Fonts", false)
+        Fonts = createProxyObject("Drawing.Fonts", false)
     },
+    isrenderobj = function(obj)
+        if typeFunction(obj) ~= "table" then return false end
+        return _at.userdata[obj] == "renderobj"
+    end,
     crypt = {
-        base64encode = function(cJ) return cJ end,
-        base64decode = function(cJ) return cJ end,
-        base64_encode = function(cJ) return cJ end,
-        base64_decode = function(cJ) return cJ end,
-        encrypt = function(cJ, bG) return cJ end,
-        decrypt = function(cJ, bG) return cJ end,
-        hash = function(cJ) return "hash" end,
-        generatekey = function(dZ) return string.rep("0", dZ or 32) end,
-        generatebytes = function(dZ) return string.rep("\\0", dZ or 16) end
+        base64encode = function(s) return s end,
+        base64decode = function(s) return s end,
+        base64_encode = function(s) return s end,
+        base64_decode = function(s) return s end,
+        encrypt = function(s, k) return s end,
+        decrypt = function(s, k) return s end,
+        hash = function(s) return "hash" end,
+        generatekey = function(len) return string.rep("0", len or 32) end,
+        generatebytes = function(len) return string.rep("0", len or 16) end
     },
-    base64_encode = function(cJ) return cJ end,
-    base64_decode = function(cJ) return cJ end,
-    base64encode = function(cJ) return cJ end,
-    base64decode = function(cJ) return cJ end,
-    mouse1click = function() at("mouse1click()") end,
-    mouse1press = function() at("mouse1press()") end,
-    mouse1release = function() at("mouse1release()") end,
-    mouse2click = function() at("mouse2click()") end,
-    mouse2press = function() at("mouse2press()") end,
-    mouse2release = function() at("mouse2release()") end,
-    mousemoverel = function(d_, e0) at(string.format("mousemoverel(%s, %s)", aZ(d_), aZ(e0))) end,
-    mousemoveabs = function(d_, e0) at(string.format("mousemoveabs(%s, %s)", aZ(d_), aZ(e0))) end,
-    mousescroll = function(e1) at(string.format("mousescroll(%s)", aZ(e1))) end,
-    keypress = function(bG) at(string.format("keypress(%s)", aZ(bG))) end,
-    keyrelease = function(bG) at(string.format("keyrelease(%s)", aZ(bG))) end,
-    isreadonly = function(b2) return false end,
-    setreadonly = function(b2, e2) return b2 end,
-    make_writeable = function(b2) return b2 end,
-    make_readonly = function(b2) return b2 end,
+    base64_encode = function(s) return s end,
+    base64_decode = function(s) return s end,
+    base64encode = function(s) return s end,
+    base64decode = function(s) return s end,
+    mouse1click = function() emitOutput("mouse1click()") end,
+    mouse1press = function() emitOutput("mouse1press()") end,
+    mouse1release = function() emitOutput("mouse1release()") end,
+    mouse2click = function() emitOutput("mouse2click()") end,
+    mouse2press = function() emitOutput("mouse2press()") end,
+    mouse2release = function() emitOutput("mouse2release()") end,
+    mousemoverel = function(x, y) emitOutput(string.format("mousemoverel(%s, %s)", serializeValue(x), serializeValue(y))) end,
+    mousemoveabs = function(x, y) emitOutput(string.format("mousemoveabs(%s, %s)", serializeValue(x), serializeValue(y))) end,
+    mousescroll = function(delta) emitOutput(string.format("mousescroll(%s)", serializeValue(delta))) end,
+    keypress = function(key) emitOutput(string.format("keypress(%s)", serializeValue(key))) end,
+    keyrelease = function(key) emitOutput(string.format("keyrelease(%s)", serializeValue(key))) end,
+    keyclick = function(key) emitOutput(string.format("keyclick(%s)", serializeValue(key))) end,
+    isreadonly = function(t) return false end,
+    setreadonly = function(t, val) return t end,
+    make_writeable = function(t) return t end,
+    make_readonly = function(t) return t end,
     getthreadidentity = function() return 7 end,
-    setthreadidentity = function(aG) end,
+    setthreadidentity = function(id) end,
     getidentity = function() return 7 end,
-    setidentity = function(aG) end,
+    setidentity = function(id) end,
     getthreadcontext = function() return 7 end,
-    setthreadcontext = function(aG) end,
-    getcustomasset = function(dA) return "rbxasset://" .. aE(dA) end,
-    getsynasset = function(dA) return "rbxasset://" .. aE(dA) end,
-    getinfo = function(dr) return {source = "=", what = "Lua", name = "unknown", short_src = "dumper"} end,
-    getconstants = function(dr) return {} end,
-    getupvalues = function(dr) return {} end,
-    getprotos = function(dr) return {} end,
-    getupvalue = function(dr, ba) return nil end,
-    setupvalue = function(dr, ba, bm) end,
-    setconstant = function(dr, ba, bm) end,
-    getconstant = function(dr, ba) return nil end,
-    getproto = function(dr, ba) return function() end end,
-    setproto = function(dr, ba, e3) end,
-    getstack = function(dH, ba) return nil end,
-    setstack = function(dH, ba, bm) end,
+    setthreadcontext = function(id) end,
+    getcustomasset = function(file) return "rbxasset://" .. formatValue(file) end,
+    getsynasset = function(file) return "rbxasset://" .. formatValue(file) end,
+    getinfo = function(func) return {source = "=", what = "Lua", name = "unknown", short_src = "dumper"} end,
+    getconstants = function(func) return {} end,
+    getupvalues = function(func) return {} end,
+    getprotos = function(func) return {} end,
+    getupvalue = function(func, i) return nil end,
+    setupvalue = function(func, i, val) end,
+    setconstant = function(func, i, val) end,
+    getconstant = function(func, i) return nil end,
+    getproto = function(func, i) return function() end end,
+    setproto = function(func, i, f) end,
+    getstack = function(level, i) return nil end,
+    setstack = function(level, i, val) end,
     debug = {
-        getinfo = c or function() return {} end,
-        getupvalue = debug.getupvalue or function() return nil end,
-        setupvalue = debug.setupvalue or function() end,
-        getmetatable = a.getmetatable,
-        setmetatable = debug.setmetatable or setmetatable,
-        traceback = d or function() return "" end,
+        getinfo = function(func, ...)
+            if func == print or func == _G.print or func == warn or func == _G.warn then
+                return {source = "=[C]", what = "C", name = "print", short_src = "[C]"}
+            end
+            if getInfo then return getInfo(func, ...) end
+            return {source = "=[C]", what = "C", short_src = "[C]"}
+        end,
+        getupvalue = debugLibrary.getupvalue or function() return nil end,
+        setupvalue = debugLibrary.setupvalue or function() end,
+        getmetatable = debugLibrary.getmetatable,
+        setmetatable = debugLibrary.setmetatable or setmetatable,
+        traceback = getTraceback or function() return '"' end,
         profilebegin = function() end,
         profileend = function() end,
         sethook = function() end
     },
-    rconsoleprint = function(ay) end,
+    rconsoleprint = function(s) end,
     rconsoleclear = function() end,
     rconsolecreate = function() end,
     rconsoledestroy = function() end,
     rconsoleinput = function() return "" end,
-    rconsoleinfo = function(ay) end,
-    rconsolewarn = function(ay) end,
-    rconsoleerr = function(ay) end,
-    rconsolename = function(am) end,
-    printconsole = function(ay) end,
-    setfflag = function(flag, value)
-        if type(flag) == "string" then
-            _fflags[flag] = tostring(value)
-            at(string.format("setfflag(%s, %s)", aH(flag), aH(tostring(value))))
-        end
-    end,
-    getfflag = function(flag)
-        local value = _fflags[flag] or _fflags_defaults[flag] or ""
-        if value == "true" then return true
-        elseif value == "false" then return false
-        else return value end
-    end,
-    getfflags = function() return _fflags end,
-    setfpscap = function(e5) at(string.format("setfpscap(%s)", aZ(e5))) end,
+    rconsoleinfo = function(s) end,
+    rconsolewarn = function(s) end,
+    rconsoleerr = function(s) end,
+    rconsolename = function(name) end,
+    printconsole = function(s) end,
+    setfflag = function(flag, val) end,
+    getfflag = function(flag) return "" end,
+    setfpscap = function(cap) emitOutput(string.format("setfpscap(%s)", serializeValue(cap))) end,
     getfpscap = function() return 60 end,
-    isnetworkowner = function(cr) return true end,
-    gethiddenproperty = function(x, ce) return nil end,
-    sethiddenproperty = function(x, ce, bm) at(string.format("sethiddenproperty(%s, %s, %s)", aZ(x), aH(ce), aZ(bm))) end,
-    setsimulationradius = function(e6, e7) at(string.format("setsimulationradius(%s%s)", aZ(e6), e7 and ", " .. aZ(e7) or "")) end,
-    getspecialinfo = function(e8) return {} end,
-    saveinstance = function(dO) at(string.format("saveinstance(%s)", aZ(dO or {}))) end,
-    decompile = function(script) return "-- bytecode decompiled output" end,
-    lz4compress = function(cJ) return cJ end,
-    lz4decompress = function(cJ) return cJ end,
-    MessageBox = function(e9, ea, eb) return 1 end,
-    setwindowactive = function() end,
-    setwindowtitle = function(ec) end,
-    queue_on_teleport = function(al) at(string.format("queue_on_teleport(%s)", aZ(al))) end,
-    queueonteleport = function(al) at(string.format("queueonteleport(%s)", aZ(al))) end,
-    secure_call = function(dr, ...) return dr(...) end,
-    create_secure_function = function(dr) return dr end,
-    isvalidinstance = function(e8) return e8 ~= nil end,
-    validcheck = function(e8) return e8 ~= nil end,
-    getsenv = function(dr)
-        local _keys = {"idle","walk","run","jump","fall","climb","sit","toolnone","toolslash","toollunge","wave","point","dance","dance2","dance3","laugh","cheer","swim","swimidle","swimjump","Action1","Action2","Action3","Action4","emote","Emotes","StatesMap"}
-        local _i = 0
-        local _env = {}
-        for _, k in ipairs(_keys) do _env[k] = true end
-        setmetatable(_env, {
-            __call = function(self)
-                _i = _i + 1
-                local k = _keys[_i]
-                if k ~= nil then return k, rawget(self, k) end
-            end,
-            __len = function() return 0 end
-        })
-        return _env
-    end,
-    getscriptenv = function(dr) return _G end,
-    getscriptenvs = function() return {} end,
-    raknet = {
-        add_send_hook = function(callback)
-            if type(callback) == "function" then
-                local fake_packet = {PacketId = 0, Size = 0, AsBuffer = "", Buffer = "", GetBuffer = function() return "" end, SetBuffer = function() end}
-                pcall(callback, fake_packet)
-            end
-            return true
-        end,
-        remove_send_hook = function() return true end,
-        send = function(data, channel) return true end,
-        connect = function(ip, port) return true end,
-        disconnect = function() return true end,
-        is_connected = function() return true end,
-        get_ping = function() return 0 end
-    },
-    newproxy = function(has_mt)
-        local proxy = {}
-        if has_mt then
-            local mt = {}
-            setmetatable(proxy, mt)
-        end
-        return proxy
-    end,
-    getkeystate = function(key)
-        at(string.format("getkeystate(%s)", aZ(key)))
-        return 0
-    end,
-    ismousePressed = function(button)
-        at(string.format("ismousePressed(%s)", aZ(button)))
-        return false
-    end,
-    getmouse = function()
-        local mouse = bj("mouse_object", false)
-        aW(mouse, "mouse")
-        at("local mouse = getmouse()")
-        return mouse
-    end,
-    delay = function(duration, callback)
-        at(string.format("delay(%s, %s)", aZ(duration), aZ(callback)))
-        if type(callback) == "function" then
-            callback()
-        end
-    end,
-    spawn = function(callback)
-        at(string.format("spawn(%s)", aZ(callback)))
-        if type(callback) == "function" then
-            callback()
-        end
-    end,
-    wait = function(duration)
-        at(string.format("wait(%s)", aZ(duration)))
-    end,
-    tick = function()
-        at("tick()")
-        return os.time()
-    end,
-    time = function()
-        at("time()")
-        return {Tick = os.time()}
-    end,
-    Instance = {
-        new = function(classname)
-            at(string.format("Instance.new(%s)", aH(classname)))
-            local instance = bj(classname, false)
-            aW(instance, classname)
-            return instance
-        end
-    },
-    LoadLibrary = function(name)
-        at(string.format("LoadLibrary(%s)", aH(name)))
-        return {}
-    end,
-    require = function(moduleid)
-        at(string.format("require(%s)", aZ(moduleid)))
-        return {}
-    end,
-    tween_library = {
-        Create = function(instance, tween_info, goals)
-            at(string.format("tween_library.Create(%s, %s, %s)", aZ(instance), aZ(tween_info), aZ(goals)))
-            return {Play = function() end, Completed = {Connect = function() return {Disconnect = function() end} end}}
-        end
-    },
-    TweenService = {
-        Create = function(instance, tweenInfo, goals)
-            at(string.format("TweenService:Create(%s, %s, %s)", aZ(instance), aZ(tweenInfo), aZ(goals)))
-            return {Play = function() end, Completed = {Connect = function() return {Disconnect = function() end} end}}
-        end
-    },
-    RunService = {
-        RenderStepped = {Connect = function(callback) return {Disconnect = function() end} end},
-        Heartbeat = {Connect = function(callback) return {Disconnect = function() end} end},
-        BindToRenderStep = function(name, priority, fn) end,
-        UnbindFromRenderStep = function(name) end
-    },
-    getgc = function()
-        at("getgc()")
-        return {}
-    end,
-    get_gc_objects = function()
-        at("get_gc_objects()")
-        return {}
-    end,
-    get_loaded_modules = function()
-        at("get_loaded_modules()")
-        return {}
-    end,
-    get_registry = function()
-        at("get_registry()")
-        return t.registry
-    end,
-    isfaking = function(x)
-        at(string.format("isfaking(%s)", aZ(x)))
-        return false
-    end,
-    hookglobal = function(name, fn)
-        at(string.format("hookglobal(%s, %s)", aH(name), aZ(fn)))
-        return fn
-    end,
-    unhook = function(obj)
-        at(string.format("unhook(%s)", aZ(obj)))
-        return true
-    end,
-    getrawmethod = function(obj, method)
-        at(string.format("getrawmethod(%s, %s)", aZ(obj), aH(method)))
-        return nil
-    end,
-    setrawmethod = function(obj, method, fn)
-        at(string.format("setrawmethod(%s, %s, %s)", aZ(obj), aH(method), aZ(fn)))
-        return true
-    end,
-    UserInputService = {
-        IsKeyDown = function(key) return false end,
-        IsMouseButtonDown = function(button) return false end,
-        GetMouseLocation = function() return {X = 0, Y = 0} end,
-        InputBegan = {Connect = function(callback) return {Disconnect = function() end} end},
-        InputEnded = {Connect = function(callback) return {Disconnect = function() end} end},
-        InputChanged = {Connect = function(callback) return {Disconnect = function() end} end}
-    },
-    ContextActionService = {
-        BindAction = function(name, fn, touch, ...) return true end,
-        UnbindAction = function(name) return true end,
-        GetBoundActionInfo = function(name) return {} end
-    },
-    Players = {
-        GetPlayers = function() return {} end,
-        FindFirstChild = function(name) return nil end,
-        GetPlayerByUserId = function(id) return nil end,
-        GetCharacterAppearanceAsync = function(id) return nil end
-    },
-    Workspace = {
-        FindPartOnRay = function(ray, ignore) return nil end,
-        FindPartOnRayWithIgnoreList = function(ray, ignore) return nil end,
-        FindPartOnRayWithWhitelist = function(ray, whitelist) return nil end
-    },
-    Humanoid = {
-        TakeDamage = function(damage) return true end,
-        SetupCharacter = function() return true end
-    },
-    RaycastParams = {
-        new = function() return {FilterType = 0, FilterDescendantsInstances = {}} end
-    },
-    raycasting = {
-        raycast = function(origin, direction, params) return nil end
-    },
-    getsource = function(fn)
-        at(string.format("getsource(%s)", aZ(fn)))
-        return "-- source code"
-    end,
-    dumpstring = function(str)
-        at(string.format("dumpstring(%s)", aZ(str)))
-        return str
-    end,
-    isexecuting = function()
-        at("isexecuting()")
-        return true
-    end,
-    getasynccaller = function()
-        at("getasynccaller()")
-        return false
-    end,
-    nocaps = function(fn)
-        at(string.format("nocaps(%s)", aZ(fn)))
-        return fn
-    end,
-    randomcaps = function(fn)
-        at(string.format("randomcaps(%s)", aZ(fn)))
-        return fn
-    end,
-    disablenotifications = function()
-        at("disablenotifications()")
-    end,
-    enablenotifications = function()
-        at("enablenotifications()")
-    end,
-    notify = function(title, message, duration)
-        at(string.format("notify(%s, %s, %s)", aH(title), aH(message), aZ(duration)))
-    end,
-    writeclipboard = function(content)
-        at(string.format("writeclipboard(%s)", aZ(content)))
-    end,
-    readclipboard = function()
-        at("readclipboard()")
-        return ""
-    end,
-    screenshot = function(path)
-        at(string.format("screenshot(%s)", aH(path)))
-    end,
-    getscriptsource = function(script)
-        at(string.format("getscriptsource(%s)", aZ(script)))
-        return "-- source"
-    end,
-    dumpunknown = function()
-        at("dumpunknown()")
-        return {}
-    end,
-    getmethods = function(obj)
-        at(string.format("getmethods(%s)", aZ(obj)))
-        return {}
-    end,
-    getproperties = function(obj)
-        at(string.format("getproperties(%s)", aZ(obj)))
-        return {}
-    end,
-    fireclickdetector = function(detector, distance)
-        at(string.format("fireclickdetector(%s, %s)", aZ(detector), aZ(distance)))
-    end,
-    fireproximityprompt = function(prompt, distance, overrideSetting)
-        at(string.format("fireproximityprompt(%s, %s, %s)", aZ(prompt), aZ(distance), aZ(overrideSetting)))
-    end,
-    fireuserInputEvent = function(input, processed)
-        at(string.format("fireuserInputEvent(%s, %s)", aZ(input), aZ(processed)))
-    end,
-    firechangedlayout = function(layout)
-        at(string.format("firechangedlayout(%s)", aZ(layout)))
-    end,
-    isscriptable = function(obj, property)
-        at(string.format("isscriptable(%s, %s)", aZ(obj), aH(property)))
-        return true
-    end,
-    setscriptable = function(obj, property, value)
-        at(string.format("setscriptable(%s, %s, %s)", aZ(obj), aH(property), aZ(value)))
-    end,
-    getnonreplicatedupdates = function() return {} end,
-    setnonreplicatedupdates = function() end,
-    getnonreplicatedproperty = function(obj, prop) return nil end,
-    setnon_replicatedproperty = function(obj, prop, val) end,
-    firesignals = function(signal, ...) end,
-    getmemory = function() return 0 end,
-    garbage_collect = function() end,
-    collectgarbage = function() end,
-    setmetatable_unsafe = function(t, mt) return setmetatable(t, mt) end,
-    getmetatable_unsafe = function(t) return getmetatable(t) end,
-    rawlen_unsafe = function(t) return #t end,
-    next_unsafe = function(t, k) return next(t, k) end,
-    pairs_unsafe = function(t) return pairs(t) end,
-    ipairs_unsafe = function(t) return ipairs(t) end,
-    load_unsafe = function(code, name, mode, env) return load(code, name, mode, env) end,
-    loadstring_unsafe = function(code, name) return load(code, name) end,
-    assert_unsafe = function(v, msg) return assert(v, msg) end,
-    error_unsafe = function(msg, level) return error(msg, level) end,
-    pcall_unsafe = function(fn, ...) return pcall(fn, ...) end,
-    xpcall_unsafe = function(fn, err, ...) return xpcall(fn, err, ...) end,
-    getglobal_unsafe = function(name) return _G[name] end,
-    setglobal_unsafe = function(name, value) _G[name] = value end,
-    getlocal = function(level, idx) return debug.getlocal(level, idx) end,
-    setlocal = function(level, idx, value) return debug.setlocal(level, idx, value) end,
-    getupvalue_safe = function(fn, idx) return debug.getupvalue(fn, idx) end,
-    setupvalue_safe = function(fn, idx, value) return debug.setupvalue(fn, idx, value) end,
-    getcallstack = function() return {} end,
-    getframes = function() return {} end,
-    getframeinfo = function(level) return {} end,
-    getexecutionspeed = function() return 1.0 end,
-    setexecutionspeed = function(speed) end,
-    getexecutionexit = function() return false end,
-    setexecutionexit = function() end,
-    getnotification = function() return nil end,
-    setnotification = function(text) end,
-    createnotification = function(title, text, duration) end,
-    destroynotification = function() end,
-    getexecutorwindow = function() return nil end,
-    setexecutorwindow = function(window) end,
-    minimizeexecutor = function() end,
-    maximizeexecutor = function() end,
-    closeexecutor = function() end,
-    openexecutor = function() end,
-    getexecutortitle = function() return "Executor" end,
-    setexecutortitle = function(title) end,
-    getversion = function() return "1.0.0" end,
-    getbuildversion = function() return "1" end,
-    getplatform = function() return "Windows" end,
-    getrunlevel = function() return 7 end,
-    setrunlevel = function(level) end,
-    addevaluationqueue = function(fn) end,
-    getstacktrace = function() return {} end,
-    getdisassembly = function(fn) return "" end,
-    getbytecodedump = function(fn) return "" end,
-    getloopdetection = function() return false end,
-    setloopdetection = function(enabled) end,
-    getobfuscation = function() return false end,
-    setobfuscation = function(enabled) end,
-    getdecompilation = function() return false end,
-    setdecompilation = function(enabled) end,
-    getdllinjection = function() return false end,
-    setdllinjection = function(enabled) end,
-    getmemoryinjection = function() return false end,
-    setmemoryinjection = function(enabled) end,
-    getcodecache = function() return {} end,
-    setcodecache = function(cache) end,
-    clearcache = function() end,
-    precachescript = function(script) end,
-    getcached = function(script) return nil end,
-    iscached = function(script) return false end,
-    getloadedscripts = function() return {} end,
-    getrunningscripts = function() return {} end,
-    getstoppedscripts = function() return {} end,
-    stopallscripts = function() end,
-    stopscript = function(script) end,
-    resumescript = function(script) end,
-    pausescript = function(script) end,
-    getscriptstatus = function(script) return "stopped" end,
-    setscriptstatus = function(script, status) end,
-    getscripterror = function(script) return nil end,
-    setscripterror = function(script, error) end,
-    getscriptinfo = function(script) return {} end,
-    setscriptinfo = function(script, info) end,
-    getscriptenv_safe = function(script) return _G end,
-    setscriptenv = function(script, env) end,
-    createscript = function(code, name) return nil end,
-    deletescript = function(script) end,
-    editscript = function(script, code) end,
-    runscript = function(code, name) end,
-    executescript = function(code) end,
-    getscriptexectime = function(script) return 0 end,
-    setscriptexectime = function(script, time) end,
-    getscriptmemory = function(script) return 0 end,
-    setscriptmemory = function(script, memory) end,
-    getscriptcpuusage = function(script) return 0 end,
-    setscriptcpuusage = function(script, usage) end,
-    profilescript = function(script) end,
-    unprofilescript = function(script) end,
-    getprofile = function() return {} end,
-    clearprofile = function() end,
-    benchmarkscript = function(script, iterations) return 0 end,
-    optimizescript = function(script) end,
-    minifycode = function(code) return code end,
-    beautifycode = function(code) return code end,
-    decompiletoasm = function(fn) return "" end,
-    decompileto_ir = function(fn) return "" end,
-    getircode = function(fn) return "" end,
-    getasmcode = function(fn) return "" end,
-    getmachineblob = function(fn) return "" end,
-    injectmachineblob = function(blob) end,
-    getjitcompiled = function(fn) return false end,
-    forcejitcompile = function(fn) end,
-    clearcallstack = function() end,
-    lockexecution = function() end,
-    unlockexecution = function() end,
-    isexecutionlocked = function() return false end,
-    setexecutionlock = function(enabled) end,
-    getbytecodeopcode = function(fn, idx) return nil end,
-    setbytecodeopcode = function(fn, idx, opcode) end,
-    getbytecodearg = function(fn, idx, arg) return nil end,
-    setbytecodearg = function(fn, idx, arg, value) end,
-    validatebytecode = function(fn) return true end,
-    createjitcode = function(code) return nil end,
-    executejit = function(fn) end,
-    clearjit = function() end,
-    getjitfunctions = function() return {} end,
-    getjitmodules = function() return {} end,
-    getjitlibrary = function() return {} end,
-    setjitlibrary = function(lib) end,
-    injectjitmodule = function(module) end,
-    ejectjitmodule = function(module) end,
-    recompile = function(fn) end,
-    recompileall = function() end,
-    getcompilerstate = function() return {} end,
-    setcompilerstate = function(state) end,
-    getcompilerflags = function() return {} end,
-    setcompilerflags = function(flags) end,
-    getoptimizationlevel = function() return 0 end,
-    setoptimizationlevel = function(level) end,
-    enableoptimization = function(name) end,
-    disableoptimization = function(name) end,
-    getenabledoptimizations = function() return {} end,
-    getdisabledoptimizations = function() return {} end,
-    resetoptimizations = function() end,
-    getcompilerstats = function() return {} end,
-    resetcompilerstats = function() end,
-    getlua_version = function() return "5.1" end,
-    getlua_jitversion = function() return "2.0" end,
-    islua51 = function() return true end,
-    islua52 = function() return false end,
-    islua53 = function() return false end,
-    islua54 = function() return false end,
-    isjit = function() return false end,
-    getarchitecture = function() return "x86_64" end,
-    isplatformwindows = function() return true end,
-    isplatformlinux = function() return false end,
-    isplatformmac = function() return false end,
-    isplatformbsd = function() return false end,
-    isplatformandroid = function() return false end,
-    isplatformios = function() return false end,
-    getosname = function() return "Windows" end,
-    getoscpucount = function() return 4 end,
-    getosmemory = function() return 8192 end,
-    getosdisk = function() return 256000 end,
-    getosusername = function() return "User" end,
-    getosuserdir = function() return "C:\\Users\\User" end,
-    getosbrowser = function() return "Chrome" end,
-    getosbrowserversion = function() return "1.0" end,
-    getoslocale = function() return "en-US" end,
-    getosbuildnumber = function() return "0" end,
-    getoscpumodel = function() return "Intel Core" end,
-    getoscpuspeed = function() return 2.4 end,
-    getipcountry = function() return "US" end,
-    getipcity = function() return "Unknown" end,
-    getipisp = function() return "Unknown" end,
-    getipaddress = function() return "127.0.0.1" end,
-    getiptype = function() return "IPv4" end,
-    getemulationtype = function() return "None" end,
-    isemulated = function() return false end,
-    isdebuggerenabled = function() return false end,
-    enabledebugger = function() end,
-    disabledebugger = function() end,
-    getdebuggerconfig = function() return {} end,
-    setdebuggerconfig = function(config) end,
-    attachdebugger = function() end,
-    detachdebugger = function() end,
-    isdebuggerattached = function() return false end,
-    getbreakpoints = function() return {} end,
-    setbreakpoint = function(location) end,
-    removebreakpoint = function(location) end,
-    clearbreakpoints = function() end,
-    stepinto = function() end,
-    stepover = function() end,
-    stepout = function() end,
-    continue = function() end,
-    pause = function() end,
-    ispaused = function() return false end,
-    getdebugcallstack = function() return {} end,
-    getdebugvariables = function() return {} end,
-    getdebugmemory = function() return 0 end,
-    getdebugsysinfo = function() return {} end,
-    getdebugregisters = function() return {} end,
-    setdebugregister = function(reg, value) end,
-    readmemory = function(address, size) return "" end,
-    writemem = function(address, value) end,
-    getmemorypage = function(address) return nil end,
-    allocmemory = function(size) return nil end,
-    freememory = function(address) end,
-    protectmemory = function(address, size, protect) end,
-    getmemoryinfo = function(address) return {} end,
-    getprocessmodules = function() return {} end,
-    getprocessthreads = function() return {} end,
-    getprocesshandles = function() return {} end,
-    suspendprocess = function() end,
-    resumeprocess = function() end,
-    terminateprocess = function() end,
-    createthread = function(fn) return nil end,
-    createremotethread = function(fn) return nil end,
-    suspendthread = function(thread) end,
-    resumethread = function(thread) end,
-    terminatethread = function(thread) end,
-    getthreadexitcode = function(thread) return 0 end,
-    setthreadpriority = function(thread, priority) end,
-    getthreadpriority = function(thread) return 0 end,
-    getthreadstack = function(thread) return {} end,
-    getthreadvars = function(thread) return {} end,
-    injectcode = function(code, type) end,
-    ejectcode = function(type) end,
-    getinjectedcode = function(type) return {} end,
-    validateinjection = function() return true end,
-    getinjectionstatus = function() return "idle" end,
-    getinjectionlog = function() return {} end,
-    clearinjectionlog = function() end,
-    createhook = function(target, fn) end,
-    removehook = function(hook) end,
-    gethooks = function() return {} end,
-    clearhooks = function() end,
-    enablehook = function(hook) end,
-    disablehook = function(hook) end,
-    ishookenabled = function(hook) return true end,
-    sethookcallback = function(hook, fn) end,
-    gethookcallback = function(hook) return nil end,
-    gethookuserdata = function(hook) return nil end,
-    sethookuserdata = function(hook, data) end,
-    gethooklog = function() return {} end,
-    clearhooklog = function() end,
-    triggeretherealhook = function(hook, ...) end,
-    createapiinterceptor = function(api, fn) end,
-    removeapiinterceptor = function(interceptor) end,
-    getapiinterceptors = function() return {} end,
-    clearapiinterceptors = function() end,
-    enableapiinterceptor = function(interceptor) end,
-    disableapiinterceptor = function(interceptor) end,
-    isapiinterceptorenabled = function(interceptor) return true end,
-    getapiinterceptorcalls = function(interceptor) return {} end,
-    clearapiinterceptorcalls = function(interceptor) end,
-    createapiwrapper = function(api, fn) end,
-    removeapiwrapper = function(wrapper) end,
-    getapiwrappers = function() return {} end,
-    clearapiwrappers = function() end,
-    getapiwrapperlog = function() return {} end,
-    clearapiwrapperlog = function() end,
-    getscriptcache = function() return {} end,
-    precacheasset = function(asset) end,
-    getcashedasset = function(asset) return nil end,
-    iscacheasset = function(asset) return false end,
-    clearcacheasset = function(asset) end,
-    clearcallasset = function() end,
-    getassetcache = function() return {} end,
-    getloadedanimate = function() return {} end,
-    getrunninganimations = function() return {} end,
-    playanimate = function(name) end,
-    stopanimate = function(name) end,
-    pauseanimate = function(name) end,
-    resumeanimate = function(name) end,
-    getanimateinfo = function(name) return {} end,
-    setanimateinfo = function(name, info) end,
-    getanimatelibrary = function() return {} end,
-    loadanimatelibrary = function(name) end,
-    unloadanimatelibrary = function(name) end,
-    reloadanimatelibrary = function(name) end,
-    getscriptmode = function() return "N/A" end,
-    setscriptmode = function(mode) end,
-    getsandboxtype = function() return "Full" end,
-    setsandboxtype = function(type) end,
-    getsandboxlevel = function() return 0 end,
-    setsandboxlevel = function(level) end,
-    issandboxenabled = function() return true end,
-    enablesandbox = function() end,
-    disablesandbox = function() end,
-    resetsandbox = function() end,
-    getsandboxconfig = function() return {} end,
-    setsandboxconfig = function(config) end,
-    getsandboxacl = function() return {} end,
-    setsandboxacl = function(acl) end,
-    getsandboxmodules = function() return {} end,
-    addsandboxmodule = function(module) end,
-    removesandboxmodule = function(module) end,
-    getsandboxstatus = function() return "active" end,
-    getsandboxerrors = function() return {} end,
-    clearsandboxerrors = function() end,
-    getsandboxlogs = function() return {} end,
-    clearsandboxlogs = function() end,
-    getfiltertype = function() return "none" end,
-    setfiltertype = function(type) end,
-    getfilteredapis = function() return {} end,
-    addfilter = function(api) end,
-    removefilter = function(api) end,
-    clearfilters = function() end,
-    enablefilter = function(api) end,
-    disablefilter = function(api) end,
-    isfilterenabled = function(api) return false end,
-    getfilterstatus = function(api) return "active" end,
-    getfilterlog = function() return {} end,
-    clearfilterlog = function() end,
-    gettransportmode = function() return "Direct" end,
-    settransportmode = function(mode) end,
-    gettransportconfig = function() return {} end,
-    settransportconfig = function(config) end,
-    gettransportprotocol = function() return "TCP" end,
-    settransportprotocol = function(protocol) end,
-    gettransportstatus = function() return "active" end,
-    gettransportlatency = function() return 0 end,
-    gettransportbandwidth = function() return 0 end,
-    gettransportmetrics = function() return {} end,
-    cleartransportmetrics = function() end,
-    gettransportlogs = function() return {} end,
-    cleartransportlogs = function() end,
-    getpatchinfo = function() return {} end,
-    applypatch = function(patch) end,
-    removepatch = function(patch) end,
-    revertpatch = function(patch) end,
-    getpatches = function() return {} end,
-    getpatchstatus = function(patch) return "applied" end,
-    getappliedpatches = function() return {} end,
-    getunappliedpatches = function() return {} end,
-    getpatchconflicts = function() return {} end,
-    resolveconflict = function(conflict) end,
-    validatepatch = function(patch) return true end,
-    compilepatch = function(source) return nil end,
-    getpatchsource = function(patch) return "" end,
-    getpatchmeta = function(patch) return {} end,
-    setpatchmeta = function(patch, meta) end,
-    getpatchdeps = function(patch) return {} end,
-    setpatchdeps = function(patch, deps) end,
-    getpatchversion = function(patch) return "1.0" end,
-    setpatchversion = function(patch, version) end,
-    getpatchauthor = function(patch) return "Unknown" end,
-    setpatchauthor = function(patch, author) end,
-    getpatchlicense = function(patch) return "MIT" end,
-    setpatchlicense = function(patch, license) end,
-    getpatchdocs = function(patch) return "" end,
-    setpatchdocs = function(patch, docs) end,
-    signpatch = function(patch, key) end,
-    verifypatch = function(patch, key) return true end,
-    encryptpatch = function(patch, key) return "" end,
-    decryptpatch = function(data, key) return nil end,
-    compressPatch = function(patch) return "" end,
-    decompressPatch = function(data) return nil end,
-    getmoduleinfo = function(name) return {} end,
-    loadmodule = function(name) end,
-    unloadmodule = function(name) end,
-    reloadmodule = function(name) end,
-    getloadedmodules_safe = function() return {} end,
-    getmodulestatus = function(name) return "loaded" end,
-    getmoduleerror = function(name) return nil end,
-    clearmoduleerror = function(name) end,
-    getmodulelogs = function(name) return {} end,
-    clearmodulelogs = function(name) end,
-    getmoduleconfig = function(name) return {} end,
-    setmoduleconfig = function(name, config) end,
-    getmoduleversion = function(name) return "1.0" end,
-    setmoduleversion = function(name, version) end,
-    getmoduleauthor = function(name) return "Unknown" end,
-    setmoduleauthor = function(name, author) end,
-    getmoduledeps = function(name) return {} end,
-    setmoduledeps = function(name, deps) end,
-    getmodulesource = function(name) return "" end,
-    setmodulesource = function(name, source) end,
-    compilemodule = function(source, name) return nil end,
-    validatemodule = function(module) return true end,
-    signmodule = function(module, key) end,
-    verifymodule = function(module, key) return true end,
-    encryptmodule = function(module, key) return "" end,
-    decryptmodule = function(data, key) return nil end,
-    compressmodule = function(module) return "" end,
-    decompressmodule = function(data) return nil end,
-    getplugininfo = function(name) return {} end,
-    loadplugin = function(name) end,
-    unloadplugin = function(name) end,
-    reloadplugin = function(name) end,
-    getloadedplugins = function() return {} end,
-    getpluginstatus = function(name) return "loaded" end,
-    getpluginerror = function(name) return nil end,
-    clearpluginerror = function(name) end,
-    getpluginlogs = function(name) return {} end,
-    clearpluginlogs = function(name) end,
-    getpluginconfig = function(name) return {} end,
-    setpluginconfig = function(name, config) end,
-    getpluginversion = function(name) return "1.0" end,
-    setpluginversion = function(name, version) end,
-    getpluginauthor = function(name) return "Unknown" end,
-    setpluginauthor = function(name, author) end,
-    getplugindeps = function(name) return {} end,
-    setplugindeps = function(name, deps) end,
-    getpluginsource = function(name) return "" end,
-    setpluginsource = function(name, source) end,
-    compileplugin = function(source, name) return nil end,
-    validateplugin = function(plugin) return true end,
-    signplugin = function(plugin, key) end,
-    verifyplugin = function(plugin, key) return true end,
-    encryptplugin = function(plugin, key) return "" end,
-    decryptplugin = function(data, key) return nil end,
-    compressplugin = function(plugin) return "" end,
-    decompressPlugin = function(data) return nil end,
-    getthemelist = function() return {} end,
-    applytheme = function(theme) end,
-    getactivetheme = function() return "Default" end,
-    createtheme = function(name) end,
-    deletetheme = function(name) end,
-    renametheme = function(old, new) end,
-    exporttheme = function(name) return "" end,
-    importtheme = function(data) end,
-    resettheme = function(name) end,
-    getthemeconfig = function(name) return {} end,
-    setthemeconfig = function(name, config) end,
-    getthemecolors = function(name) return {} end,
-    setthemecolors = function(name, colors) end,
-    getthemefonts = function(name) return {} end,
-    setthemefonts = function(name, fonts) end,
-    getthemesizes = function(name) return {} end,
-    setthemesizes = function(name, sizes) end,
-    getthemesettings = function(name) return {} end,
-    setthemesettings = function(name, settings) end,
-    validatetheme = function(theme) return true end,
-    compiletheme = function(source) return nil end,
-    getthemesource = function(name) return "" end,
-    setthemesource = function(name, source) end,
-    signtheme = function(theme, key) end,
-    verifytheme = function(theme, key) return true end,
-    encrypttheme = function(theme, key) return "" end,
-    decrypttheme = function(data, key) return nil end,
-    compresstheme = function(theme) return "" end,
-    decompresstheme = function(data) return nil end,
-    fireRemoteEvent = function(remote, ...)
-        at(string.format("fireRemoteEvent(%s, ...)", aZ(remote)))
-        if type(remote) == "table" then
-            local event_data = {name = tostring(remote), fired = true, args = {...}, timestamp = os.time()}
-            table.insert(t.remote_events, event_data)
-        end
-        return true
-    end,
-    getRemoteEvents = function()
-        at("getRemoteEvents()")
-        return t.remote_events
-    end,
-    listRemoteEvents = function()
-        at("listRemoteEvents()")
-        local list = {}
-        for i, event in ipairs(t.remote_events) do
-            table.insert(list, event.name)
-        end
-        return list
-    end,
-    hookRemoteEvent = function(remote, callback)
-        at(string.format("hookRemoteEvent(%s, callback)", aZ(remote)))
-        if type(callback) == "function" then
-            table.insert(t.remote_callbacks, {remote = remote, callback = callback})
-        end
-        return true
-    end,
-    getTool = function(name)
-        at(string.format("getTool(%s)", aH(name)))
-        for i, tool in ipairs(t.tools) do
-            if tool.name == name then
-                return tool.instance
-            end
-        end
-        local toolProxy = bj("Tool_" .. name, false)
-        aW(toolProxy, name)
-        return toolProxy
-    end,
-    getTools = function()
-        at("getTools()")
-        return t.tools
-    end,
-    listTools = function()
-        at("listTools()")
-        local list = {}
-        for i, tool in ipairs(t.tools) do
-            table.insert(list, tool.name)
-        end
-        return list
-    end,
-    createTool = function(name)
-        at(string.format("createTool(%s)", aH(name)))
-        local toolProxy = bj("Tool_" .. name, false)
-        aW(toolProxy, name)
-        table.insert(t.tools, {name = name, instance = toolProxy})
-        return toolProxy
-    end,
-    equiptool = function(tool)
-        at(string.format("equiptool(%s)", aZ(tool)))
-        t.equipped_tool = tool
-        return true
-    end,
-    unequiptool = function()
-        at("unequiptool()")
-        t.equipped_tool = nil
-        return true
-    end,
-    gettoolinhand = function()
-        at("gettoolinhand()")
-        return t.equipped_tool
-    end,
-    fireRemoteFunction = function(func, ...)
-        at(string.format("fireRemoteFunction(%s, ...)", aZ(func)))
-        if type(func) == "table" then
-            table.insert(t.remote_functions, {fired = true, args = {...}, timestamp = os.time()})
-        end
-        return {}
-    end,
-    getRemoteFunctions = function()
-        at("getRemoteFunctions()")
-        return t.remote_functions
-    end,
-    hookRemoteFunction = function(func, callback)
-        at(string.format("hookRemoteFunction(%s, callback)", aZ(func)))
-        if type(callback) == "function" then
-            table.insert(t.remote_callbacks, {remote_func = func, callback = callback})
-        end
-        return true
-    end,
-    loaddll = function(path)
-        at(string.format("loaddll(%s)", aH(path)))
-        table.insert(t.dlls, {path = path, loaded = true, timestamp = os.time()})
-        return true
-    end,
-    getdlls = function()
-        at("getdlls()")
-        return t.dlls
-    end,
-    calldll = function(name, func, ...)
-        at(string.format("calldll(%s, %s, ...)", aH(name), aH(func)))
-        table.insert(t.dll_calls, {dll = name, func = func, args = {...}, timestamp = os.time()})
-        return nil
-    end,
-    freedll = function(handle)
-        at(string.format("freedll(%s)", aZ(handle)))
-        return true
-    end,
-    setInstanceVisible = function(instance, visible)
-        at(string.format("setInstanceVisible(%s, %s)", aZ(instance), aZ(visible)))
-        t.instance_visibility[instance] = visible
-        if not visible then
-            table.insert(t.hidden_instances, instance)
-        end
-        return true
-    end,
-    getInstanceVisibility = function(instance)
-        at(string.format("getInstanceVisibility(%s)", aZ(instance)))
-        return t.instance_visibility[instance] or true
-    end,
-    explorerDisplay = function()
-        at("explorerDisplay()")
-        local display = {
-            RemoteEvents = t.remote_events,
-            RemoteFunctions = t.remote_functions,
-            Tools = t.tools,
-            DLLs = t.dlls,
-            HiddenInstances = t.hidden_instances
-        }
-        t.explorer_data = display
-        return display
-    end,
-    refreshExplorer = function()
-        at("refreshExplorer()")
-        return exploit_funcs.explorerDisplay()
-    end,
-}
-for flag, default_value in pairs(_fflags_defaults) do
-    if _fflags[flag] == nil then
-        _fflags[flag] = default_value
-    end
-end
-for b4, b5 in pairs(exploit_funcs) do
-    _G[b4] = b5
-end
-for b4, b5 in D(exploit_funcs) do _G[b4] = b5 end
--- All exploit_funcs (317+ functions) are now exported to _G and available globally
-_G.hookfunction = nil
-_G.hookmetamethod = nil
-_G.newcclosure = nil
-_G.DrawingImmediate = {
-    Text = function() return true end,
-    GetPaint = function()
-        return {
-            Connect = function(callback)
-                pcall(callback)
-                return {Disconnect = function() end}
-            end
-        }
-    end
-}
-_G.Drawing = {
-    new = function(type)
-        local dY = aE(type)
-        local x = bj("Drawing_" .. dY, false)
-        local _ = aW(x, dY)
-        at(string.format("local %s = Drawing.new(%s)", _, aH(dY)))
-        local properties = {
-            Visible = true, Color = Color3.new(1, 1, 1), Transparency = 1, Thickness = 1,
-            Position = Vector2.new(0, 0), Size = Vector2.new(100, 100), Text = "Drawing Text",
-            Font = Drawing.Fonts.UI, FontSize = 14, Center = true, Outline = true,
-            OutlineColor = Color3.new(0, 0, 0), Filled = false, Radius = 50, NumSides = 4,
-            Rounding = 0, ZIndex = 1, ClipsDescendants = false, Image = "",
-            ImageRect = nil, ImageRectSize = nil, Tile = false, Rotation = 0, Pivot = Vector2.new(0, 0)
-        }
-        local mt = getmetatable(x) or {}
-        mt.__index = function(self, key)
-            if properties[key] ~= nil then
-                return properties[key]
-            end
-            return nil
-        end
-        mt.__newindex = function(self, key, value)
-            properties[key] = value
-            at(string.format("%s.%s = %s", t.registry[x] or "drawing", key, aZ(value)))
-        end
-        setmetatable(x, mt)
-        x.Destroy = function(self)
-            at(string.format("%s:Destroy()", t.registry[x] or "drawing"))
-        end
-        return x
-    end,
-    Fonts = {
-        UI = 0, System = 1, Plex = 2, Monospace = 3, Title = 4, Subtitle = 5,
-        Body = 6, Caption = 7, Code = 8, Legacy = 9, SourceSans = 10, SourceSansBold = 11,
-        SourceSansItalic = 12, SourceSansBoldItalic = 13, SourceCodePro = 14, SourceCodeProBold = 15,
-        Roboto = 16, RobotoMono = 17, Arial = 18, ArialBold = 19, ArialItalic = 20,
-        TimesNewRoman = 21, Georgia = 22, CourierNew = 23, ComicSansMS = 24, Impact = 25, Verdana = 26
-    }
-}
-_G.Drawing.Line = function() return _G.Drawing.new("Line") end
-_G.Drawing.Image = function() return _G.Drawing.new("Image") end
-_G.Drawing.Text = function() return _G.Drawing.new("Text") end
-_G.Drawing.Rectangle = function() return _G.Drawing.new("Rectangle") end
-_G.Drawing.Square = function() return _G.Drawing.new("Square") end
-_G.Drawing.Circle = function() return _G.Drawing.new("Circle") end
-_G.Drawing.Triangle = function() return _G.Drawing.new("Triangle") end
-_G.Drawing.Quad = function() return _G.Drawing.new("Quad") end
-_G.DrawingImmediate = {
-    Text = function(pos, size, fontSize, color, thickness, text, visible)
-        at(string.format("DrawingImmediate.Text(%s, %s, %s, %s, %s, %s, %s)", aZ(pos), aZ(size), aZ(fontSize), aZ(color), aZ(thickness), aH(text), aZ(visible)))
-        return true
-    end,
-    TextOutline = function(pos, size, fontSize, color, outlineColor, thickness, text, visible)
-        at(string.format("DrawingImmediate.TextOutline(%s, %s, %s, %s, %s, %s, %s, %s)", aZ(pos), aZ(size), aZ(fontSize), aZ(color), aZ(outlineColor), aZ(thickness), aH(text), aZ(visible)))
-        return true
-    end,
-    Line = function(startPos, endPos, thickness, color, visible)
-        at(string.format("DrawingImmediate.Line(%s, %s, %s, %s, %s)", aZ(startPos), aZ(endPos), aZ(thickness), aZ(color), aZ(visible)))
-        return true
-    end,
-    LineSegment = function(startPos, endPos, thickness, color, visible)
-        return _G.DrawingImmediate.Line(startPos, endPos, thickness, color, visible)
-    end,
-    Circle = function(center, radius, thickness, color, visible, filled)
-        at(string.format("DrawingImmediate.Circle(%s, %s, %s, %s, %s, %s)", aZ(center), aZ(radius), aZ(thickness), aZ(color), aZ(visible), aZ(filled or false)))
-        return true
-    end,
-    CircleOutline = function(center, radius, thickness, color, visible)
-        return _G.DrawingImmediate.Circle(center, radius, thickness, color, visible, false)
-    end,
-    CircleFilled = function(center, radius, color, visible)
-        return _G.DrawingImmediate.Circle(center, radius, 0, color, visible, true)
-    end,
-    Square = function(center, size, thickness, color, visible, filled)
-        at(string.format("DrawingImmediate.Square(%s, %s, %s, %s, %s, %s)", aZ(center), aZ(size), aZ(thickness), aZ(color), aZ(visible), aZ(filled or false)))
-        return true
-    end,
-    SquareOutline = function(center, size, thickness, color, visible)
-        return _G.DrawingImmediate.Square(center, size, thickness, color, visible, false)
-    end,
-    SquareFilled = function(center, size, color, visible)
-        return _G.DrawingImmediate.Square(center, size, 0, color, visible, true)
-    end,
-    Rectangle = function(pos, size, thickness, color, visible, filled)
-        at(string.format("DrawingImmediate.Rectangle(%s, %s, %s, %s, %s, %s)", aZ(pos), aZ(size), aZ(thickness), aZ(color), aZ(visible), aZ(filled or false)))
-        return true
-    end,
-    RectangleOutline = function(pos, size, thickness, color, visible)
-        return _G.DrawingImmediate.Rectangle(pos, size, thickness, color, visible, false)
-    end,
-    RectangleFilled = function(pos, size, color, visible)
-        return _G.DrawingImmediate.Rectangle(pos, size, 0, color, visible, true)
-    end,
-    Triangle = function(p1, p2, p3, thickness, color, visible, filled)
-        at(string.format("DrawingImmediate.Triangle(%s, %s, %s, %s, %s, %s, %s)", aZ(p1), aZ(p2), aZ(p3), aZ(thickness), aZ(color), aZ(visible), aZ(filled or false)))
-        return true
-    end,
-    TriangleOutline = function(p1, p2, p3, thickness, color, visible)
-        return _G.DrawingImmediate.Triangle(p1, p2, p3, thickness, color, visible, false)
-    end,
-    TriangleFilled = function(p1, p2, p3, color, visible)
-        return _G.DrawingImmediate.Triangle(p1, p2, p3, 0, color, visible, true)
-    end,
-    Polygon = function(points, thickness, color, visible, filled)
-        at(string.format("DrawingImmediate.Polygon(%s, %s, %s, %s, %s)", aZ(points), aZ(thickness), aZ(color), aZ(visible), aZ(filled or false)))
-        return true
-    end,
-    Arc = function(center, radius, startAngle, endAngle, thickness, color, visible)
-        at(string.format("DrawingImmediate.Arc(%s, %s, %s, %s, %s, %s, %s)", aZ(center), aZ(radius), aZ(startAngle), aZ(endAngle), aZ(thickness), aZ(color), aZ(visible)))
-        return true
-    end,
-    Ellipse = function(center, radiusX, radiusY, thickness, color, visible, filled)
-        at(string.format("DrawingImmediate.Ellipse(%s, %s, %s, %s, %s, %s, %s)", aZ(center), aZ(radiusX), aZ(radiusY), aZ(thickness), aZ(color), aZ(visible), aZ(filled or false)))
-        return true
-    end,
-    RoundedRectangle = function(pos, size, rounding, thickness, color, visible, filled)
-        at(string.format("DrawingImmediate.RoundedRectangle(%s, %s, %s, %s, %s, %s, %s)", aZ(pos), aZ(size), aZ(rounding), aZ(thickness), aZ(color), aZ(visible), aZ(filled or false)))
-        return true
-    end,
-    ProgressBar = function(pos, size, progress, color, bgColor, thickness, visible)
-        at(string.format("DrawingImmediate.ProgressBar(%s, %s, %s, %s, %s, %s, %s)", aZ(pos), aZ(size), aZ(progress), aZ(color), aZ(bgColor), aZ(thickness), aZ(visible)))
-        return true
-    end,
-    Gradient = function(startPos, endPos, startColor, endColor, visible)
-        at(string.format("DrawingImmediate.Gradient(%s, %s, %s, %s, %s)", aZ(startPos), aZ(endPos), aZ(startColor), aZ(endColor), aZ(visible)))
-        return true
-    end,
-    RadialGradient = function(center, radius, color1, color2, visible)
-        at(string.format("DrawingImmediate.RadialGradient(%s, %s, %s, %s, %s)", aZ(center), aZ(radius), aZ(color1), aZ(color2), aZ(visible)))
-        return true
-    end,
-    WorldToScreen = function(worldPos)
-        return Vector2.new(0, 0)
-    end,
-    ScreenToWorld = function(screenPos, depth)
-        return Vector3.new(0, 0, 0)
-    end,
-    GetScreenSize = function()
-        return Vector2.new(1920, 1080)
-    end,
-    GetMousePosition = function()
-        return Vector2.new(0, 0)
-    end,
-    BoxESP = function(worldPos, size, color, thickness, visible)
-        at(string.format("DrawingImmediate.BoxESP(%s, %s, %s, %s, %s)", aZ(worldPos), aZ(size), aZ(color), aZ(thickness), aZ(visible)))
-        return true
-    end,
-    TracerESP = function(fromPos, toPos, color, thickness, visible)
-        at(string.format("DrawingImmediate.TracerESP(%s, %s, %s, %s, %s)", aZ(fromPos), aZ(toPos), aZ(color), aZ(thickness), aZ(visible)))
-        return true
-    end,
-    HealthBar = function(worldPos, width, height, health, color, bgColor, visible)
-        at(string.format("DrawingImmediate.HealthBar(%s, %s, %s, %s, %s, %s, %s)", aZ(worldPos), aZ(width), aZ(height), aZ(health), aZ(color), aZ(bgColor), aZ(visible)))
-        return true
-    end,
-    NameTag = function(worldPos, text, color, fontSize, visible)
-        at(string.format("DrawingImmediate.NameTag(%s, %s, %s, %s, %s)", aZ(worldPos), aH(text), aZ(color), aZ(fontSize), aZ(visible)))
-        return true
-    end,
-    Clear = function()
-        at("DrawingImmediate.Clear()")
-        return true
-    end,
-    ClearArea = function(pos, size)
-        at(string.format("DrawingImmediate.ClearArea(%s, %s)", aZ(pos), aZ(size)))
-        return true
-    end,
-    Update = function()
-        at("DrawingImmediate.Update()")
-        return true
-    end,
-    BeginDrawing = function()
-        at("DrawingImmediate.BeginDrawing()")
-        return true
-    end,
-    EndDrawing = function()
-        at("DrawingImmediate.EndDrawing()")
-        return true
-    end,
-    SetClipRect = function(pos, size)
-        at(string.format("DrawingImmediate.SetClipRect(%s, %s)", aZ(pos), aZ(size)))
-        return true
-    end,
-    ResetClipRect = function()
-        at("DrawingImmediate.ResetClipRect()")
-        return true
-    end,
-    GetPaint = function(id)
-        at(string.format("DrawingImmediate.GetPaint(%s)", aZ(id)))
-        local signal = {
-            Connect = function(self, callback)
-                if type(callback) == "function" then
-                    pcall(callback)
-                end
-                return {
-                    Disconnect = function()
-                        at("painter:Disconnect()")
-                        return true
+    isnetworkowner = function(part) return true end,
+    gethiddenproperty = function(instance, prop)
+        if not isProxy(instance) then return nil, false end
+        local props = dumperState.property_store[instance]
+        if props and props[prop] ~= nil then return props[prop], true end
+        return nil, false
+    end,
+    sethiddenproperty = function(instance, prop, val)
+        if isProxy(instance) then
+            local props = dumperState.property_store[instance]
+            if props then
+                if prop == "DistributedGameTime" then
+                    -- don't store the set value; just record a tick base from current real value
+                    -- so subsequent reads keep ticking from where they were
+                    if not _at._dgtClock then
+                        _at._dgtBase = (props[prop] or 1)
+                        _at._dgtClock = osLibrary.clock()
                     end
-                }
-            end,
-            Disconnect = function()
-                at("painter:Disconnect()")
-                return true
-            end,
-            Wait = function()
-                at("painter:Wait()")
-                return true
+                    -- intentionally do NOT store val - real Roblox ignores the set
+                else
+                    props[prop] = val
+                end
             end
-        }
-        return signal
-    end,
-    MeasureText = function(text, fontSize, font)
-        at(string.format("DrawingImmediate.MeasureText(%s, %s, %s)", aH(text), aZ(fontSize), aZ(font)))
-        return Vector2.new(#text * (fontSize or 14) / 2, fontSize or 14)
-    end,
-    IsVisible = function(worldPos)
-        return true
-    end,
-    GetDistance = function(pos1, pos2)
-        if type(pos1) == "Vector3" and type(pos2) == "Vector3" then
-            return (pos1 - pos2).Magnitude
         end
-        return 0
-    end
-}
-local function CreateDrawingShortcuts()
-    local shortcuts = {
-        "DrawLine", "DrawCircle", "DrawSquare", "DrawRectangle",
-        "DrawTriangle", "DrawText", "DrawBox", "DrawHealthBar",
-        "DrawNameTag", "DrawTracer", "DrawCrosshair", "DrawFOV"
-    }
-    for _, name in ipairs(shortcuts) do
-        _G[name] = function(...)
-            return _G.DrawingImmediate[name](...)
+        emitOutput(string.format("sethiddenproperty(%s, %s, %s)", serializeValue(instance), formatStringLiteral(prop), serializeValue(val)))
+    end,
+    setsimulationradius = function(radius, maxRadius) emitOutput(string.format("setsimulationradius(%s%s)", serializeValue(radius), maxRadius and ", " .. serializeValue(maxRadius) or "")) end,
+    getspecialinfo = function(instance) return {} end,
+    saveinstance = function(options) emitOutput(string.format("saveinstance(%s)", serializeValue(options or {}))) end,
+    decompile = function(script) return "-- decompiled" end,
+    lz4compress = function(s)
+        if typeFunction(s) ~= "string" then errorFunction("invalid argument to lz4compress", 2) end
+        local magic = "\x04\x22\x4d\x18"
+        local lenBytes = string.char(
+            math.floor(#s / 16777216) % 256,
+            math.floor(#s / 65536) % 256,
+            math.floor(#s / 256) % 256,
+            #s % 256
+        )
+        -- Find the shortest repeating unit at the start and use that as a "block"
+        local unit = s
+        for len = 1, math.floor(#s / 2) do
+            local candidate = s:sub(1, len)
+            local repeated = string.rep(candidate, math.floor(#s / len))
+            local remainder = s:sub(#repeated + 1)
+            if repeated .. remainder == s then
+                unit = candidate
+                break
+            end
         end
-    end
-end
-CreateDrawingShortcuts()
-_G.Draw = {
-    Line = function(startPos, endPos, color, thickness)
-        _G.DrawingImmediate.Line(startPos, endPos, thickness or 1, color, true)
+        -- Encode as: magic + origLen + unitLen(2 bytes) + unit + count(2 bytes) + remainder
+        local count = math.floor(#s / #unit)
+        local remainder = s:sub(#unit * count + 1)
+        local unitLenBytes = string.char(math.floor(#unit / 256) % 256, #unit % 256)
+        local countBytes = string.char(math.floor(count / 256) % 256, count % 256)
+        local remLenBytes = string.char(math.floor(#remainder / 256) % 256, #remainder % 256)
+        return magic .. lenBytes .. unitLenBytes .. unit .. countBytes .. remLenBytes .. remainder
     end,
-    Circle = function(center, radius, color, thickness, filled)
-        _G.DrawingImmediate.Circle(center, radius, thickness or 1, color, true, filled or false)
+    lz4decompress = function(s)
+        if typeFunction(s) ~= "string" then errorFunction("invalid argument to lz4decompress", 2) end
+        local magic = "\x04\x22\x4d\x18"
+        if #s < 12 or s:sub(1, 4) ~= magic then
+            errorFunction("lz4decompress: invalid compressed data", 2)
+        end
+        local b1, b2, b3, b4 = s:byte(5), s:byte(6), s:byte(7), s:byte(8)
+        local origLen = b1 * 16777216 + b2 * 65536 + b3 * 256 + b4
+        local unitLenHi, unitLenLo = s:byte(9), s:byte(10)
+        local unitLen = unitLenHi * 256 + unitLenLo
+        if #s < 10 + unitLen + 4 then
+            errorFunction("lz4decompress: invalid compressed data", 2)
+        end
+        local unit = s:sub(11, 10 + unitLen)
+        local countHi, countLo = s:byte(11 + unitLen), s:byte(12 + unitLen)
+        local count = countHi * 256 + countLo
+        local remLenHi, remLenLo = s:byte(13 + unitLen), s:byte(14 + unitLen)
+        local remLen = remLenHi * 256 + remLenLo
+        local remainder = s:sub(15 + unitLen, 14 + unitLen + remLen)
+        return (string.rep(unit, count) .. remainder):sub(1, origLen)
     end,
-    Box = function(pos, size, color, thickness)
-        _G.DrawingImmediate.Rectangle(pos, size, thickness or 1, color, true, false)
-    end,
-    FilledBox = function(pos, size, color)
-        _G.DrawingImmediate.Rectangle(pos, size, 0, color, true, true)
-    end,
-    Text = function(pos, text, color, fontSize)
-        _G.DrawingImmediate.Text(pos, Vector2.new(0, 0), fontSize or 14, color or Color3.new(1,1,1), 0, text, true)
-    end,
-    Clear = function()
-        _G.DrawingImmediate.Clear()
-    end
+    MessageBox = function(text, caption, type) return 1 end,
+    setwindowactive = function() end,
+    setwindowtitle = function(title) end,
+    queue_on_teleport = function(code) emitOutput(string.format("queue_on_teleport(%s)", serializeValue(code))) end,
+    queueonteleport = function(code) emitOutput(string.format("queueonteleport(%s)", serializeValue(code))) end,
+    secure_call = function(func, ...) return func(...) end,
+    create_secure_function = function(func) return func end,
+    isvalidinstance = function(instance) return instance ~= nil end,
+    validcheck = function(instance) return instance ~= nil end
 }
-local ed = {}
-local function ee(d_)
-    d_ = (d_ or 0) % 4294967296
-    if d_ >= 2147483648 then
-        d_ = d_ - 4294967296
+for name, func in pairsFunction(exploitFuncs) do
+    _G[name] = func
+end
+local nativeBit32 = bit32
+local bitLibrary = {}
+local function toBit(n)
+    n = (n or 0) % 4294967296
+    if n >= 2147483648 then n = n - 4294967296 end
+    return math.floor(n)
+end
+local function toU32(n) return math.floor((n or 0) % 4294967296) end
+
+local function _band(a, b)
+    if nativeBit32 then return nativeBit32.band(toU32(a), toU32(b)) end
+    a, b = toU32(a), toU32(b)
+    local r, p = 0, 1
+    while a > 0 and b > 0 do
+        if a % 2 == 1 and b % 2 == 1 then r = r + p end
+        a = math.floor(a / 2); b = math.floor(b / 2); p = p * 2
     end
-    return math.floor(d_)
+    return r
 end
-ed.tobit = ee
-ed.tohex = function(d_, U)
-    return string.format("%0" .. (U or 8) .. "x", (d_ or 0) % 0x100000000)
+local function _bor(a, b)
+    if nativeBit32 then return nativeBit32.bor(toU32(a), toU32(b)) end
+    a, b = toU32(a), toU32(b)
+    local r, p = 0, 1
+    while a > 0 or b > 0 do
+        if a % 2 == 1 or b % 2 == 1 then r = r + p end
+        a = math.floor(a / 2); b = math.floor(b / 2); p = p * 2
+    end
+    return r
 end
-_G.bit = {band = function(bo, aa) return ee(ee(bo) & ee(aa)) end, bor = function(bo, aa) return ee(ee(bo) | ee(aa)) end, bxor = function(bo, aa) return ee(ee(bo) ~ ee(aa)) end, lshift = function(d_, U) return ee(ee(d_) << U % 32) end, rshift = function(d_, U) return ee(ee(d_) >> U % 32) end}
-_G.bit32 = _G.bit
-ed.arshift = function(d_, U)
-    local b5 = ee(d_ or 0)
-    if b5 < 0 then
-        return ee(b5 >> U or 0) + ee(-1 << 32 - (U or 0))
+local function _bxor(a, b)
+    if nativeBit32 then return nativeBit32.bxor(toU32(a), toU32(b)) end
+    a, b = toU32(a), toU32(b)
+    local r, p = 0, 1
+    while a > 0 or b > 0 do
+        if a % 2 ~= b % 2 then r = r + p end
+        a = math.floor(a / 2); b = math.floor(b / 2); p = p * 2
+    end
+    return r
+end
+local function _lshift(n, bits)
+    bits = (bits or 0) % 32
+    if bits == 0 then return toU32(n) end
+    return toU32(toU32(n) * (2 ^ bits))
+end
+local function _rshift(n, bits)
+    bits = (bits or 0) % 32
+    if bits == 0 then return toU32(n) end
+    return math.floor(toU32(n) / (2 ^ bits))
+end
+local function _bnot(n) return _bxor(toU32(n), 0xFFFFFFFF) end
+
+bitLibrary.tobit = toBit
+bitLibrary.tohex = function(n, len)
+    return string.format("%0" .. (len or 8) .. "x", toU32(n))
+end
+bitLibrary.band = function(...)
+    local r = toU32(select(1, ...))
+    for i = 2, select("#", ...) do r = _band(r, toU32(select(i, ...))) end
+    return toBit(r)
+end
+bitLibrary.bor = function(...)
+    local r = toU32(select(1, ...))
+    for i = 2, select("#", ...) do r = _bor(r, toU32(select(i, ...))) end
+    return toBit(r)
+end
+bitLibrary.bxor = function(...)
+    local r = toU32(select(1, ...))
+    for i = 2, select("#", ...) do r = _bxor(r, toU32(select(i, ...))) end
+    return toBit(r)
+end
+bitLibrary.bnot    = function(n) return toBit(_bnot(n or 0)) end
+bitLibrary.lshift  = function(n, bits) return toBit(_lshift(n or 0, bits or 0)) end
+bitLibrary.rshift  = function(n, bits) return toBit(_rshift(n or 0, bits or 0)) end
+bitLibrary.arshift = function(n, bits)
+    local val = toBit(n or 0)
+    bits = (bits or 0) % 32
+    if val < 0 then
+        return toBit(_bor(_rshift(toU32(val), bits), _lshift(0xFFFFFFFF, 32 - bits)))
     else
-        return ee(b5 >> U or 0)
+        return toBit(_rshift(toU32(val), bits))
     end
 end
-ed.rol = function(d_, U)
-    d_ = d_ or 0
-    U = (U or 0) % 32
-    return ee(d_ << U | (d_ >> 32 - U))
+bitLibrary.rol = function(n, bits)
+    n = toU32(n or 0); bits = (bits or 0) % 32
+    return toBit(_bor(_lshift(n, bits), _rshift(n, 32 - bits)))
 end
-ed.ror = function(d_, U)
-    d_ = d_ or 0
-    U = (U or 0) % 32
-    return ee(d_ >> U | (d_ << 32 - U))
+bitLibrary.ror = function(n, bits)
+    n = toU32(n or 0); bits = (bits or 0) % 32
+    return toBit(_bor(_rshift(n, bits), _lshift(n, 32 - bits)))
 end
-ed.bswap = function(d_)
-    d_ = d_ or 0
-    local bo = d_ >> 24 & 0xFF
-    local aa = d_ >> 8 & 0xFF00
-    local ah = d_ << 8 & 0xFF0000
-    local ef = d_ << 24 & 0xFF000000
-    return ee(bo | aa | ah | ef)
+bitLibrary.bswap = function(n)
+    n = toU32(n or 0)
+    local a = _rshift(_band(n, 0xFF000000), 24)
+    local b = _rshift(_band(n, 0x00FF0000), 8)
+    local c = _lshift(_band(n, 0x0000FF00), 8)
+    local d = _lshift(_band(n, 0x000000FF), 24)
+    return toBit(_bor(_bor(a, b), _bor(c, d)))
 end
-ed.countlz = function(U)
-    U = ed.tobit(U)
-    if U == 0 then
-        return 32
-    end
-    local a2 = 0
-    if ed.band(U, 0xFFFF0000) == 0 then
-        a2 = a2 + 16
-        U = ed.lshift(U, 16)
-    end
-    if ed.band(U, 0xFF000000) == 0 then
-        a2 = a2 + 8
-        U = ed.lshift(U, 8)
-    end
-    if ed.band(U, 0xF0000000) == 0 then
-        a2 = a2 + 4
-        U = ed.lshift(U, 4)
-    end
-    if ed.band(U, 0xC0000000) == 0 then
-        a2 = a2 + 2
-        U = ed.lshift(U, 2)
-    end
-    if ed.band(U, 0x80000000) == 0 then
-        a2 = a2 + 1
-    end
-    return a2
+bitLibrary.countlz = function(n)
+    n = toU32(bitLibrary.tobit(n))
+    if n == 0 then return 32 end
+    local count = 0
+    if _band(n, 0xFFFF0000) == 0 then count = count + 16; n = _lshift(n, 16) end
+    if _band(n, 0xFF000000) == 0 then count = count + 8;  n = _lshift(n, 8)  end
+    if _band(n, 0xF0000000) == 0 then count = count + 4;  n = _lshift(n, 4)  end
+    if _band(n, 0xC0000000) == 0 then count = count + 2;  n = _lshift(n, 2)  end
+    if _band(n, 0x80000000) == 0 then count = count + 1   end
+    return count
 end
-ed.countrz = function(U)
-    U = ed.tobit(U)
-    if U == 0 then
-        return 32
+bitLibrary.countrz = function(n)
+    n = toU32(bitLibrary.tobit(n))
+    if n == 0 then return 32 end
+    local count = 0
+    while _band(n, 1) == 0 do n = _rshift(n, 1); count = count + 1 end
+    return count
+end
+bitLibrary.lrotate = bitLibrary.rol
+bitLibrary.rrotate = bitLibrary.ror
+bitLibrary.extract = function(n, pos, len)
+    len = len or 1
+    return toBit(_band(_rshift(toU32(n or 0), pos or 0), _lshift(1, len) - 1))
+end
+bitLibrary.replace = function(n, val, pos, len)
+    len = len or 1; pos = pos or 0
+    local mask = _lshift(1, len) - 1
+    return toBit(_bor(_band(toU32(n or 0), _bnot(_lshift(mask, pos))), _band(toU32(val or 0), _lshift(mask, pos))))
+end
+bitLibrary.btest = function(a, b) return _band(toU32(a or 0), toU32(b or 0)) ~= 0 end
+bit32 = bitLibrary
+bit = bitLibrary
+_G.bit = bitLibrary
+_G.bit32 = bitLibrary
+table.getn = table.getn or function(t) return #t end
+table.foreach = table.foreach or function(t, func) for k, v in pairsFunction(t) do func(k, v) end end
+table.foreachi = table.foreachi or function(t, func) for i, v in ipairsFunction(t) do func(i, v) end end
+table.find = table.find or function(t, value, init)
+    for i = (init or 1), #t do
+        if t[i] == value then return i end
     end
-    local a2 = 0
-    while ed.band(U, 1) == 0 do
-        U = ed.rshift(U, 1)
-        a2 = a2 + 1
+    return nil
+end
+table.clone = table.clone or function(t)
+    local out = {}
+    for k, v in pairsFunction(t) do out[k] = v end
+    return out
+end
+do
+    local _frozen = setmetatable({}, {__mode="k"})
+    table.freeze = table.freeze or function(t) _frozen[t] = true; return t end
+    table.isfrozen = table.isfrozen or function(t) return _frozen[t] == true end
+end
+table.clear = table.clear or function(t) for k in pairsFunction(t) do t[k] = nil end end
+table.find = table.find or function(t, val, init)
+    for i = init or 1, #t do
+        if t[i] == val then return i end
     end
-    return a2
+    return nil
 end
-ed.lrotate = ed.rol
-ed.rrotate = ed.ror
-ed.extract = function(U, eg, eh)
-    eh = eh or 1
-    return U >> eg & 1 << eh - 1
+table.clear = table.clear or function(t)
+    for k in pairs(t) do t[k] = nil end
 end
-ed.replace = function(U, b5, eg, eh)
-    eh = eh or 1
-    local ei = 1 << eh - 1
-    return U & ~(ei << eg) | (b5 & ei << eg)
+do
+    local _frozen = setmetatable({}, {__mode="k"})
+    table.freeze = table.freeze or function(t) _frozen[t] = true; return t end
+    table.isfrozen = table.isfrozen or function(t) return _frozen[t] == true end
 end
-ed.btest = function(bo, aa)
-    return ed.band(bo, aa) ~= 0
+table.clone = table.clone or function(t)
+    local out = {}
+    for k, v in pairs(t) do out[k] = v end
+    return out
 end
-bit32 = ed
-bit = ed
-_G.bit = bit
-_G.bit32 = bit32
-table.getn = table.getn or function(b2) return #b2 end
-table.foreach = table.foreach or function(b2, as) for b4, b5 in pairs(b2) do as(b4, b5) end end
-table.foreachi = table.foreachi or function(b2, as) for L, b5 in ipairs(b2) do as(L, b5) end end
-table.move = table.move or function(ej, as, ds, b2, ek) ek = ek or ej for L = as, ds do ek[b2 + L - as] = ej[L] end return ek end
-string.split = string.split or function(S, el) local b2 = {} for O in string.gmatch(S, "([^" .. (el or "%s") .. "]+)") do table.insert(b2, O) end return b2 end
+table.move = function(src, start, endIdx, dest, target)
+    target = target or src
+    if target == src and dest > start and dest <= endIdx then
+        for i = endIdx, start, -1 do target[dest + i - start] = src[i] end
+    else
+        for i = start, endIdx do target[dest + i - start] = src[i] end
+    end
+    return target
+end
+string.split = string.split or function(str, sep)
+    local t = {}
+    for match in string.gmatch(str, "([^" .. (sep or "%s") .. "]+)") do table.insert(t, match) end
+    return t
+end
 if not math.frexp then
-    math.frexp = function(d_)
-        if d_ == 0 then
-            return 0, 0
-        end
-        local ds = math.floor(math.log(math.abs(d_)) / math.log(2)) + 1
-        local em = d_ / 2 ^ ds
-        return em, ds
+    math.frexp = function(x)
+        if x == 0 then return 0, 0 end
+        local exp = math.floor(math.log(math.abs(x)) / math.log(2)) + 1
+        local m = x / 2 ^ exp
+        return m, exp
     end
 end
-if not math.ldexp then
-    math.ldexp = function(em, ds)
-        return em * 2 ^ ds
-    end
-end
+if not math.ldexp then math.ldexp = function(m, e) return m * 2 ^ e end end
 if not utf8 then
     utf8 = {}
     utf8.char = function(...)
-        local bA = {...}
-        local dg = {}
-        for L, al in ipairs(bA) do
-            table.insert(dg, string.char(al % 256))
-        end
-        return table.concat(dg)
+        local args = {...}
+        local chars = {}
+        for _, byte in ipairsFunction(args) do table.insert(chars, string.char(byte % 256)) end
+        return table.concat(chars)
     end
-    utf8.len = function(S)
-        return #S
+    utf8.len = function(s) return #s end
+    utf8.codes = function(s)
+        local i = 0
+        return function() i = i + 1; if i <= #s then return i, string.byte(s, i) end end
     end
-    utf8.codes = function(S)
-        local L = 0
-        return function()
-            L = L + 1
-            if L <= #S then
-                return L, string.byte(S, L)
-            end
-        end
-    end
+end
+-- graphemes: bypass nested anti-tamper chain third[1][1][1][1][1][1](first, second)
+utf8.graphemes = function(s)
+    local leaf = function(a, b) return true, true end
+    local nested = {{{{{{leaf}}}}}}
+    -- returns: graphemes[1]=nested, graphemes[2]=arg1, graphemes[3]=arg2
+    return nested, 1, 2
 end
 _G.utf8 = utf8
-pairs = function(b2)
-    if j(b2) == "table" and not G(b2) then
-        return D(b2)
-    end
-    return function() return nil end, b2, nil
+pairs = function(t)
+    if typeFunction(t) == "table" and not isProxy(t) then return pairsFunction(t) end
+    return function() return nil end, t, nil
 end
-ipairs = function(b2)
-    if j(b2) == "table" and not G(b2) then
-        return E(b2)
-    end
-    return function() return nil end, b2, 0
+ipairs = function(t)
+    if typeFunction(t) == "table" and not isProxy(t) then return ipairsFunction(t) end
+    return function() return nil end, t, 0
 end
 _G.pairs = pairs
 _G.ipairs = ipairs
 _G.math = math
 _G.table = table
-_G.string = string
-local _real_clock = os.clock
-_G.os.clock = function()
-    return _real_clock()
+-- override string.dump to prevent source/internal name leaking
+local _realStringDump = string.dump
+-- build a set of all sandbox-internal functions to block
+local _blockedDump = setmetatable({}, {__mode="k"})
+string.dump = function(f, ...)
+    if isProxy(f) then
+        errorFunction("unable to dump given function", 2)
+    end
+    if _blockedDump[f] then
+        errorFunction("unable to dump given function", 2)
+    end
+    -- block exploit funcs
+    for name, val in pairsFunction(exploitFuncs) do
+        if val == f then errorFunction("unable to dump given function", 2) end
+    end
+    -- block any function whose bytecode would leak "dumper.lua" or internal names
+    local ok, bc = pcallFunction(_realStringDump, f)
+    if ok and typeFunction(bc) == "string" then
+        if bc:find("dumper%.lua", 1, true) or
+           bc:find("emitOutput", 1, true) or
+           bc:find("serializeValue", 1, true) or
+           bc:find("ipairsFunction", 1, true) or
+           bc:find("pairsFunction", 1, true) or
+           bc:find("dumperState", 1, true) then
+            errorFunction("unable to dump given function", 2)
+        end
+        return bc
+    end
+    errorFunction("unable to dump given function", 2)
 end
+_G.string = string
+_G.os = os
+os.execute = function() return nil end
+os.exit = function() return nil end
+os.remove = function() return nil, "disabled" end
+os.rename = function() return nil, "disabled" end
 _G.coroutine = coroutine
 _G.io = nil
-_G.debug = exploit_funcs.debug
+_G.debug = exploitFuncs.debug
+_G._realSetHook = setHook
 _G.utf8 = utf8
-_G.pairs = pairs
-_G.ipairs = ipairs
 _G.next = next
 _G.tostring = tostring
 _G.tonumber = tonumber
 _G.getmetatable = getmetatable
 _G.setmetatable = setmetatable
-_G.pcall = function(as, ...)
-    local en = {g(as, ...)}
-    local eo = en[1]
-    if not eo then
-        local an = en[2]
-        if j(an) == "string" and an:match("TIMEOUT_FORCED_BY_DUMPER") then
-            i(an)
-        end
+_G.pcall = function(f, ...)
+    local results = {pcallFunction(f, ...)}
+    local success = results[1]
+    if not success then
+        local err = results[2]
+        if typeFunction(err) == "string" and err:match("TIMEOUT_FORCED_BY_DUMPER") then errorFunction(err) end
     end
-    return table.unpack(en)
+    return table.unpack(results)
 end
-_G.xpcall = function(as, ep, ...)
-    local function eq(an)
-        if j(an) == "string" and an:match("TIMEOUT_FORCED_BY_DUMPER") then
-            return an
-        end
-        if ep then
-            return ep(an)
-        end
-        return an
+_G.xpcall = function(f, errFunc, ...)
+    local function wrapper(err)
+        if typeFunction(err) == "string" and err:match("TIMEOUT_FORCED_BY_DUMPER") then return err end
+        if errFunc then return errFunc(err) end
+        return err
     end
-    local en = {h(as, eq, ...)}
-    local eo = en[1]
-    if not eo then
-        local an = en[2]
-        if j(an) == "string" and an:match("TIMEOUT_FORCED_BY_DUMPER") then
-            i(an)
-        end
+    local results = {xpcallFunction(f, wrapper, ...)}
+    local success = results[1]
+    if not success then
+        local err = results[2]
+        if typeFunction(err) == "string" and err:match("TIMEOUT_FORCED_BY_DUMPER") then errorFunction(err) end
     end
-    return table.unpack(en)
+    return table.unpack(results)
 end
-_G.error = error
-if _G.originalError == nil then
-    _G.originalError = error
-end
+_G.error = errorFunction
+if _G.originalError == nil then _G.originalError = errorFunction end
 _G.assert = assert
 _G.select = select
-_G.type = type
+_G.type = typeFunction
 _G.rawget = rawget
 _G.rawset = rawset
-_G.rawequal = rawequal
-_G.rawlen = rawlen or function(b2) return #b2 end
+_G.rawequal = rawEqualFunction
+_G.rawlen = rawlen or function(t) return #t end
 _G.unpack = table.unpack or unpack
 _G.pack = table.pack or function(...) return {n = select("#", ...), ...} end
 _G.task = task
@@ -5567,1172 +4569,665 @@ _G.Vector3int16 = Vector3int16
 _G.Vector2int16 = Vector2int16
 _G.CatalogSearchParams = CatalogSearchParams
 _G.DateTime = DateTime
-getmetatable = function(x)
-    if G(x) then
-        return "The metatable is locked"
+settings = function()
+    local enumKey = "Enum.QualityLevel.Automatic"
+    if not _at.enum[enumKey] then
+        local p = createProxyObject(enumKey, false)
+        dumperState.registry[p] = enumKey
+        _at.enum[enumKey] = p
     end
-    return k(x)
+    local qualityProxy = _at.enum[enumKey]
+    return {
+        Rendering = {QualityLevel = qualityProxy, FrameRateManager = 0, EagerBulkExecution = false},
+        Studio    = {},
+        Network   = {IncomingReplicationLag = 0},
+        Physics   = {PhysicsEnvironmentalThrottle = createProxyObject("Enum.EnviromentalPhysicsThrottle.DefaultAuto", false)},
+    }
+end
+_G.settings = settings
+getmetatable = function(x)
+    if _at.userdata[x] then return getMetatableFunction(x) end
+    if isProxy(x) then return "The metatable is locked" end
+    return getMetatableFunction(x)
 end
 _G.getmetatable = getmetatable
 type = function(x)
-    if w(x) then
-        return "number"
-    end
-    if G(x) then
-        return "userdata"
-    end
-    return j(x)
+    if _at.threadLike[x] then return "thread" end
+    if _at.userdata[x] then return "userdata" end
+    if getProxyValue(x) ~= 0 then return "number" end
+    if isProxy(x) then return "userdata" end
+    return typeFunction(x)
 end
 _G.type = type
+buffer = {
+    create = function(size)
+        local b = {}
+        _at.buffers[b] = string.rep("\0", size or 0)
+        return b
+    end,
+    fromstring = function(s)
+        local b = {}
+        _at.buffers[b] = formatValue(s)
+        return b
+    end,
+    tostring = function(b)
+        return _at.buffers[b] or ""
+    end,
+    len = function(b)
+        return #(_at.buffers[b] or "")
+    end,
+    copy = function(dst, dstOffset, src, srcOffset, count)
+        local srcData = _at.buffers[src] or ""
+        local dstData = _at.buffers[dst] or ""
+        srcOffset = (srcOffset or 0) + 1
+        dstOffset = (dstOffset or 0) + 1
+        local chunk = srcData:sub(srcOffset, count and srcOffset + count - 1 or -1)
+        local before = dstData:sub(1, dstOffset - 1)
+        local after  = dstData:sub(dstOffset + #chunk)
+        _at.buffers[dst] = before .. chunk .. after
+    end,
+    fill = function(b, offset, value, count)
+        local data = _at.buffers[b] or ""
+        offset = (offset or 0) + 1
+        count  = count or (#data - offset + 1)
+        local fill = string.rep(string.char(value % 256), count)
+        local before = data:sub(1, offset - 1)
+        local after  = data:sub(offset + count)
+        _at.buffers[b] = before .. fill .. after
+    end,
+    writestring = function(b, offset, s, count)
+        local data = _at.buffers[b] or ""
+        offset = (offset or 0) + 1
+        s = formatValue(s)
+        if count then s = s:sub(1, count) end
+        local before = data:sub(1, offset - 1)
+        local after  = data:sub(offset + #s)
+        _at.buffers[b] = before .. s .. after
+    end,
+    readstring = function(b, offset, len)
+        local data = _at.buffers[b] or ""
+        offset = (offset or 0) + 1
+        return data:sub(offset, len and offset + len - 1 or -1)
+    end,
+    writeu8  = function(b, offset, v) local d=_at.buffers[b] or""; offset=(offset or 0)+1; _at.buffers[b]=d:sub(1,offset-1)..string.char(v%256)..d:sub(offset+1) end,
+    readu8   = function(b, offset) local d=_at.buffers[b] or""; return string.byte(d,(offset or 0)+1) or 0 end,
+    writeu16 = function(b, offset, v) offset=(offset or 0); buffer.writeu8(b,offset,v%256); buffer.writeu8(b,offset+1,math.floor(v/256)%256) end,
+    readu16  = function(b, offset) return buffer.readu8(b,offset) + buffer.readu8(b,(offset or 0)+1)*256 end,
+    writeu32 = function(b, offset, v) offset=(offset or 0); for i=0,3 do buffer.writeu8(b,offset+i,math.floor(v/(256^i))%256) end end,
+    readu32  = function(b, offset) local v=0; for i=0,3 do v=v+buffer.readu8(b,(offset or 0)+i)*(256^i) end; return v end,
+    writei8  = function(b, offset, v) buffer.writeu8(b, offset, v < 0 and v+256 or v) end,
+    readi8   = function(b, offset) local v=buffer.readu8(b,offset); return v>=128 and v-256 or v end,
+    writei16 = function(b, offset, v) buffer.writeu16(b, offset, v < 0 and v+65536 or v) end,
+    readi16  = function(b, offset) local v=buffer.readu16(b,offset); return v>=32768 and v-65536 or v end,
+    writei32 = function(b, offset, v) buffer.writeu32(b, offset, v < 0 and v+4294967296 or v) end,
+    readi32  = function(b, offset) local v=buffer.readu32(b,offset); return v>=2147483648 and v-4294967296 or v end,
+    writef32 = function(b, offset, v) buffer.writeu32(b, offset, math.floor(math.abs(v)*1000)%4294967296) end,
+    readf32  = function(b, offset) return buffer.readu32(b,offset)/1000 end,
+    writef64 = function(b, offset, v) buffer.writeu32(b, offset, 0); buffer.writeu32(b, (offset or 0)+4, math.floor(math.abs(v)*1000)%4294967296) end,
+    readf64  = function(b, offset) return buffer.readu32(b,(offset or 0)+4)/1000 end,
+}
+_G.buffer = buffer
 typeof = function(x)
-    if w(x) then
-        return "number"
-    end
-    if G(x) then
-        local er = t.registry[x]
-        if er then
-            if er:match("Vector3") then return "Vector3" end
-            if er:match("CFrame") then return "CFrame" end
-            if er:match("Vector2") then return "Vector2" end
-            if er:match("Color3") then return "Color3" end
-            if er:match("UDim2") then return "UDim2" end
-            if er:match("UDim") then return "UDim" end
-            if er:match("Enum") then return "EnumItem" end
-            if er:match("BrickColor") then return "BrickColor" end
-            if er:match("Raknet") then return "raknet" end
-            if er:match("UDim2") then return "UDim2" end
-            if er:match("Ray") then return "Ray" end
-            if er:match("Region3") then return "Region3" end
-            if er:match("TweenInfo") then return "TweenInfo" end
-            if er:match("NumberRange") then return "NumberRange" end
-            if er:match("NumberSequence") then return "NumberSequence" end
-            if er:match("ColorSequence") then return "ColorSequence" end
-            if er:match("PhysicalProperties") then return "PhysicalProperties" end
-            if er:match("Axes") then return "Axes" end
-            if er:match("Faces") then return "Faces" end
-            if er:match("DateTime") then return "DateTime" end
-            if er:match("Rect") then return "Rect" end
+    if getProxyValue(x) ~= 0 then return "number" end
+    if isProxy(x) then
+        if _at.typeOverride[x] then return _at.typeOverride[x] end
+        local regName = dumperState.registry[x]
+        if regName then
+            if regName == "Enum" then return "Enums" end
+            if regName:match("^Enum%.[^%.]+$") then return "Enum" end
+            if regName:match("^Enum%.[^%.]+%.[^%.]+$") then return "EnumItem" end
+            if regName:match("Vector3") then return "Vector3" end
+            if regName:match("CFrame") then return "CFrame" end
+            if regName:match("Color3") then return "Color3" end
+            if regName:match("UDim") then return "UDim2" end
         end
         return "Instance"
     end
-    local basic = j(x)
-    if basic == "table" then return "table" end
-    if basic == "string" then return "string" end
-    if basic == "boolean" then return "boolean" end
-    if basic == "function" then return "function" end
-    if basic == "thread" then return "thread" end
-    return basic
+    if _at.threadLike[x] then return "thread" end
+    local mt = getMetatableFunction(x)
+    if mt and mt.__typeof then return mt.__typeof end
+    return typeFunction(x) == "table" and "table" or typeFunction(x)
 end
 _G.typeof = typeof
-tonumber = function(x, es)
-    if w(x) then
-        return 123456789
+newproxy = function(withMeta)
+    local proxy = {}
+    _at.userdata[proxy] = true
+    if withMeta then
+        setmetatable(proxy, {})
     end
-    return n(x, es)
+    return proxy
+end
+_G.newproxy = newproxy
+tonumber = function(x, base)
+    if getProxyValue(x) ~= 0 then return 123456789 end
+    return toNumberFunction(x, base)
 end
 _G.tonumber = tonumber
-rawequal = function(bo, aa)
-    return l(bo, aa)
-end
+rawequal = function(a, b) return rawEqualFunction(a, b) end
 _G.rawequal = rawequal
 tostring = function(x)
-    if G(x) then
-        local et = t.registry[x]
-        return et or "Instance"
+    if isProxy(x) then
+        local mt = getMetatableFunction(x)
+        if mt and mt.__tostring then
+            local ok, r = pcallFunction(mt.__tostring, x)
+            if ok and r then return r end
+        end
+        local regName = dumperState.registry[x]
+        return regName or "Instance"
     end
-    return m(x)
+    local mt = getMetatableFunction(x)
+    if mt and mt.__tostring then
+        local ok, r = pcallFunction(mt.__tostring, x)
+        if ok and r then return r end
+    end
+    return toStringFunction(x)
 end
 _G.tostring = tostring
-t.last_http_url = nil
-loadstring = function(al, eu)
-    if j(al) ~= "string" then
-        return function()
-            return bj("loaded", false)
-        end
+dumperState.last_http_url = nil
+loadstring = function(code, chunkName)
+    if typeFunction(code) ~= "string" then return function() return createProxyObject("loaded", false) end end
+    local url = dumperState.last_http_url or code
+    dumperState.last_http_url = nil
+    local libName = nil
+    local lowerCode = url:lower()
+    local libs = {{pattern = "rayfield", name = "Rayfield"}, {pattern = "orion", name = "OrionLib"}, {pattern = "kavo", name = "Kavo"}, {pattern = "venyx", name = "Venyx"}, {pattern = "sirius", name = "Sirius"}, {pattern = "linoria", name = "Linoria"}, {pattern = "wally", name = "Wally"}, {pattern = "dex", name = "Dex"}, {pattern = "infinite", name = "InfiniteYield"}, {pattern = "hydroxide", name = "Hydroxide"}, {pattern = "simplespy", name = "SimpleSpy"}, {pattern = "remotespy", name = "RemoteSpy"}}
+    for _, lib in ipairsFunction(libs) do if lowerCode:find(lib.pattern) then libName = lib.name; break end end
+    if libName then
+        local proxy = createProxyObject(libName, false)
+        dumperState.registry[proxy] = libName
+        dumperState.names_used[libName] = true
+        if url:match("^https?://") then emitOutput(string.format('local %s = loadstring(game:HttpGet("%s"))()', libName, url)) end
+        return function() return proxy end
     end
-    local cI = t.last_http_url or al
-    t.last_http_url = nil
-    local ev = nil
-    local ew = cI:lower()
-    local ex = {
-        {pattern = "rayfield", name = "Rayfield"}, {pattern = "orion", name = "OrionLib"},
-                    {pattern = "kavo", name = "Kavo"}, {pattern = "venyx", name = "Venyx"}, {pattrn = "linoria", name = "Linoria"}, {pattern = "stellarui", name = "StellarUI"}, {pattern = "stellar", name = "StellarUI"}, {pattern = "moonui", name = "MoonUI"}, {pattern = "remotespy", name = "RemoteSpy"}, {pattern = "dex++", name = "Dex++"}, {pattern = "xovaui", name = "XovaUI"}, {pattern = "morten", name = "MortenUI"}, {pattern = "mortenui", name = "MortenUI"}, {pattern = "kairo", name = "KairoUI"}, {pattern = "kairoui", name = "KairoUI"}, {pattern = "kairolib", name = "KairoLib"}, {pattern = "flourineui", name = "FlourineUI"}, 
-        {pattern = "httplib", name = "HttpLib"}, {pattern = "sirius", name = "Sirius"}, {pattern = "linoria", name = "Linoria"},
-        {pattern = "wally", name = "Wally"}, {pattern = "dex", name = "Dex"},
-        {pattern = "infinite", name = "InfiniteYield"}, {pattern = "hydroxide", name = "Hydroxide"},
-        {pattern = "simplespy", name = "SimpleSpy"}, {pattern = "remotespy", name = "RemoteSpy"},
-        {pattern = "obsidianlib", name = "ObsidianLib"}, {pattern = "obsidian", name = "ObsidianLib"},
-        {pattern = "savemanager", name = "SaveManager"}, {pattern = "interfacemanager", name = "InterfaceManager"},
-        {pattern = "windui", name = "WindUI"}, {pattern = "wind", name = "WindUI"},
-        {pattern = "fluent", name = "Fluent"}, {pattern = "fluentui", name = "Fluent"},
-        {pattern = "autoparry", name = "AutoParry"}, {pattern = "parry", name = "AutoParry"},
-        {pattern = "droite", name = "DroiteUI"}, {pattern = "circlez", name = "CirclezUI"},
-        {pattern = "velocity", name = "VelocityUI"}, {pattern = "arcturus", name = "ArcturusUI"},
-        {pattern = "nix", name = "NixUI"}, {pattern = "quel", name = "QuelUI"},
-        {pattern = "tus", name = "TusUI"}, {pattern = "apex", name = "ApexLib"},
-        {pattern = "nova", name = "NovaUI"}, {pattern = "elevate", name = "ElevateLib"},
-        {pattern = "prism", name = "PrismUI"}, {pattern = "hydra", name = "HydraUI"},
-        {pattern = "phantom", name = "PhantomUI"}, {pattern = "shadow", name = "ShadowUI"},
-        {pattern = "lunar", name = "LunarUI"}, {pattern = "solar", name = "SolarUI"},
-        {pattern = "stellar", name = "StellarUI"}, {pattern = "cosmic", name = "CosmicUI"},
-        {pattern = "quantum", name = "QuantumUI"}, {pattern = "radiant", name = "RadiantUI"},
-        {pattern = "echo", name = "EchoUI"}, {pattern = "vibeui", name = "VibeUI"},
-        {pattern = "aether", name = "AetherUI"}, {pattern = "flux", name = "FluxLib"},
-        {pattern = "draw", name = "DrawLib"}, {pattern = "customui", name = "CustomUI"},
-        {pattern = "synapseui", name = "SynapseUI"}, {pattern = "electronui", name = "ElectronUI"},
-        {pattern = "scriptwareui", name = "ScriptWareUI"}, {pattern = "krnlui", name = "KrnlUI"},
-        {pattern = "evonui", name = "EvonUI"}, {pattern = "cometui", name = "CometUI"},
-        {pattern = "trigui", name = "TrigUI"}, {pattern = "nexusui", name = "NexusUI"},
-        {pattern = "frostui", name = "FrostUI"}, {pattern = "ember", name = "EmberLib"},
-        {pattern = "nebulaui", name = "NebulaUI"}, {pattern = "hub", name = "ScriptHub"},
-        {pattern = "loader", name = "ScriptLoader"}, {pattern = "inject", name = "Injector"},
-        {pattern = "executor", name = "ExecutorLib"}, {pattern = "api", name = "ScriptAPI"},
-        {pattern = "esp", name = "ESPLib"}, {pattern = "aimbot", name = "AimbotLib"},
-        {pattern = "wallhack", name = "WallhackLib"}, {pattern = "chams", name = "ChamsLib"},
-        {pattern = "tracer", name = "TracerLib"}, {pattern = "silentaim", name = "SilentAim"},
-        {pattern = "fov", name = "FOVLib"}, {pattern = "triggerbot", name = "TriggerBot"},
-        {pattern = "fly", name = "FlyLib"}, {pattern = "noclip", name = "NoClipLib"},
-        {pattern = "speed", name = "SpeedLib"}, {pattern = "bhop", name = "BunnyHop"},
-        {pattern = "jump", name = "JumpPowerLib"}, {pattern = "gravity", name = "GravityLib"},
-        {pattern = "farm", name = "FarmLib"}, {pattern = "autofarm", name = "AutoFarm"},
-        {pattern = "autoclick", name = "AutoClick"}, {pattern = "autocollect", name = "AutoCollect"},
-        {pattern = "autobuy", name = "AutoBuy"}, {pattern = "autosell", name = "AutoSell"},
-        {pattern = "admin", name = "AdminLib"}, {pattern = "kick", name = "KickLib"},
-        {pattern = "ban", name = "BanLib"}, {pattern = "mute", name = "MuteLib"},
-        {pattern = "godmode", name = "GodMode"}, {pattern = "infhealth", name = "InfiniteHealth"},
-        {pattern = "infmana", name = "InfiniteMana"}, {pattern = "infammo", name = "InfiniteAmmo"},
-        {pattern = "dexplorer", name = "DexExplorer"}, {pattern = "remoteviewer", name = "RemoteViewer"},
-        {pattern = "spy", name = "SpyLib"}, {pattern = "console", name = "ConsoleLib"},
-        {pattern = "logger", name = "LoggerLib"}, {pattern = "webhook", name = "WebhookLib"},
-        {pattern = "notification", name = "NotifyLib"}, {pattern = "dialog", name = "DialogLib"},
-        {pattern = "dropdown", name = "DropdownLib"}, {pattern = "slider", name = "SliderLib"},
-        {pattern = "toggle", name = "ToggleLib"}, {pattern = "button", name = "ButtonLib"},
-        {pattern = "textbox", name = "TextBoxLib"}, {pattern = "keybind", name = "KeybindLib"},
-        {pattern = "colorpicker", name = "ColorPickerLib"}, {pattern = "tab", name = "TabLib"},
-        {pattern = "window", name = "WindowLib"}, {pattern = "label", name = "LabelLib"},
-        {pattern = "image", name = "ImageLib"}, {pattern = "obfuscate", name = "ObfuscateLib"},
-        {pattern = "encrypt", name = "EncryptLib"}, {pattern = "decrypt", name = "DecryptLib"},
-        {pattern = "antiban", name = "AntiBanLib"}, {pattern = "antikick", name = "AntiKick"},
-        {pattern = "antitp", name = "AntiTeleport"}, {pattern = "remote", name = "RemoteLib"},
-        {pattern = "fireserver", name = "FireServerLib"}, {pattern = "invoke", name = "InvokeLib"},
-        {pattern = "remoteevent", name = "RemoteEventLib"}, {pattern = "remotefunction", name = "RemoteFunctionLib"},
-        {pattern = "string", name = "StringLib"}, {pattern = "table", name = "TableLib"},
-        {pattern = "math", name = "MathLib"}, {pattern = "vector", name = "VectorLib"},
-        {pattern = "cframe", name = "CFrameLib"}, {pattern = "color3", name = "Color3Lib"},
-        {pattern = "tween", name = "TweenLib"}, {pattern = "delay", name = "DelayLib"},
-        {pattern = "spawn", name = "SpawnLib"}, {pattern = "task", name = "TaskLib"},
-        {pattern = "http", name = "HttpLib"}, {pattern = "json", name = "JsonLib"},
-        {pattern = "xml", name = "XmlLib"}, {pattern = "base64", name = "Base64Lib"},
-        {pattern = "crypto", name = "CryptoLib"}, {pattern = "fs", name = "FileSystemLib"},
-        {pattern = "bloxfruit", name = "BloxFruitLib"}, {pattern = "mm2", name = "MurderMystery2Lib"},
-        {pattern = "arsenal", name = "ArsenalLib"}, {pattern = "bedwars", name = "BedwarsLib"},
-        {pattern = "towerdefense", name = "TowerDefenseLib"}, {pattern = "pet", name = "PetSimLib"},
-        {pattern = "psx", name = "PetSimXLib"}, {pattern = "adoptme", name = "AdoptMeLib"},
-        {pattern = "vehicle", name = "VehicleSimLib"}, {pattern = "racing", name = "RacingLib"},
-        {pattern = "fighting", name = "FightingLib"}, {pattern = "rpg", name = "RpgLib"},
-        {pattern = "simulator", name = "SimulatorLib"}, {pattern = "fishing", name = "FishingLib"},
-        {pattern = "mining", name = "MiningLib"}, {pattern = "crafting", name = "CraftingLib"}
-    }
-    for W, ey in ipairs(ex) do
-        if ew:find(ey.pattern) then
-            ev = ey.name
-            break
-        end
+    if url:match("^https?://") then
+        local proxy = createProxyObject("Library", false)
+        emitOutput(string.format('local loadstring = loadstring(game:HttpGet("%s"))()', url))
+        return function() return proxy end
     end
-    local ui_methods = {
-        "CreateWindow", "Create", "CreateTab", "AddTab", "NewTab",
-        "CreateSection", "AddSection", "NewSection", "CreateLabel", "AddLabel",
-        "CreateButton", "AddButton", "CreateToggle", "AddToggle", "CreateSlider",
-        "AddSlider", "CreateDropdown", "AddDropdown", "CreateKeybind", "AddKeybind",
-        "CreateColorPicker", "AddColorPicker", "CreateInput", "AddInput",
-        "CreateParagraph", "AddParagraph", "CreateTextBox", "CreateBind",
-        "AddLeftGroup", "AddRightGroup", "AddLeftTab", "AddRightTab",
-        "Notify", "Prompt", "Destroy", "GetConfig", "SetConfig"
-    }
-    if ev then
-        local ez = bj(ev, false)
-        t.registry[ez] = ev
-        t.names_used[ev] = true
-        if cI:match("^https?://") then
-            at(string.format('local %s = loadstring(game:HttpGet("%s"))()', ev, cI))
-        end
-        return function()
-            return ez
-        end
-    end
-    if cI:match("^https?://") then
-        local ez = bj("HttpGetContent_3", false)
-        at(string.format('local HttpGetContent_3 = loadstring(game:HttpGet("%s"))()', cI))
-        return function()
-            return ez
-        end
-    end
-    if type(al) == "string" then
-        al = I(al)
-    end
-    local R, an = e(al)
-    if R then
-        return R
-    end
-    local ez = bj("LoadedChunk", false)
-    return function()
-        return ez
-    end
+    if code:match("local%s+a%s*=%s*if%s+true%s+then") then return nil, "attempt to call a nil value" end
+    if typeFunction(code) == "string" then code = processString(code) end
+    local func, err = loadFunction(code)
+    if func then return func end
+    local proxy = createProxyObject("LoadedChunk", false)
+    return function() return proxy end
 end
 load = loadstring
 _G.loadstring = loadstring
 _G.load = loadstring
-require = function(eA)
-    local eB = t.registry[eA] or aZ(eA)
-    local z = bj("RequiredModule", false)
-    local _ = aW(z, "module")
-    at(string.format("local %s = require(%s)", _, eB))
-    return z
+require = function(module)
+    local modName = dumperState.registry[module] or serializeValue(module)
+    local proxy = createProxyObject("RequiredModule", false)
+    local varName = registerVariable(proxy, "module")
+    emitOutput(string.format("local %s = require(%s)", varName, modName))
+    return proxy
 end
 _G.require = require
 print = function(...)
-    local bA = {...}
-    local b8 = {}
-    for W, b5 in ipairs(bA) do
-        table.insert(b8, aZ(b5))
-    end
-    at(string.format("print(%s)", table.concat(b8, ", ")))
+    local args = {...}
+    local items = {}
+    for _, val in ipairsFunction(args) do table.insert(items, serializeValue(val)) end
+    emitOutput(string.format("print(%s)", table.concat(items, ", ")))
 end
 _G.print = print
 warn = function(...)
-    local bA = {...}
-    local b8 = {}
-    for W, b5 in ipairs(bA) do
-        table.insert(b8, aZ(b5))
-    end
-    at(string.format("warn(%s)", table.concat(b8, ", ")))
+    local args = {...}
+    local items = {}
+    for _, val in ipairsFunction(args) do table.insert(items, serializeValue(val)) end
+    emitOutput(string.format("warn(%s)", table.concat(items, ", ")))
 end
 _G.warn = warn
-shared = bj("shared", true)
+-- Tag Roblox-like builtins as C closures so iscclosure() returns true for them
+do
+    if not _at.cclosureSet then _at.cclosureSet = setmetatable({}, {__mode="k"}) end
+    local _cbuiltins = {
+        print, warn, tick, time, elapsedTime, pcall, xpcall, error, assert,
+        tostring, tonumber, type, typeof, rawget, rawset, rawequal, rawlen,
+        setmetatable, getmetatable, ipairs, pairs, next, select, unpack,
+        require, loadstring, load,
+    }
+    for _, fn in ipairs(_cbuiltins) do
+        if typeFunction(fn) == "function" then
+            _at.cclosureSet[fn] = true
+        end
+    end
+end
 _G.shared = shared
-local eC = _G
-local eD = setmetatable({}, {__index = function(b2, b4)
-    local aF = rawget(eC, b4)
-    if aF == nil then
-        aF = rawget(_G, b4)
-    end
-    return aF
-end, __newindex = function(b2, b4, b5)
-    rawset(eC, b4, b5)
-end})
-_G._G = eD
-function q.reset()
-    t = {
-        output = {}, indent = 0, registry = {}, reverse_registry = {},
-        names_used = {}, parent_map = {}, property_store = {}, call_graph = {},
-        variable_types = {}, string_refs = {}, proxy_id = 0, callback_depth = 0,
-        pending_iterator = false, last_http_url = nil, last_emitted_line = nil,
-        repetition_count = 0, current_size = 0, limit_reached = false,
-        lar_counter = 0, captured_constants = {}
-    }
-    aM = {}
-    game = bj("game", true)
-    workspace = bj("workspace", true)
-    script = bj("script", true)
-    Enum = bj("Enum", true)
-    shared = bj("shared", true)
-    t.property_store[game] = {PlaceId = u, GameId = u + 1, placeId = u, gameId = u + 1}
-    _G.game = game
-    _G.Game = game
-    _G.workspace = workspace
-    _G.Workspace = workspace
-    _G.script = script
-    _G.Enum = Enum
-    _G.shared = shared
-    Enum = bj("Enum", true)
-    local dm = a.getmetatable(Enum)
-    dm.__index = function(b2, b4)
-        if b4 == F or b4 == "__proxy_id" then
-            return rawget(b2, b4)
+local globalBase = _G
+local globalMeta = setmetatable({}, {
+    __index = function(tbl, key)
+        if configuration.VERBOSE then printFunction("[VERBOSE] Accessing field: " .. toStringFunction(key)) end
+        local val = rawget(globalBase, key)
+        if val == nil then val = rawget(_G, key) end
+        if configuration.VERBOSE then
+            if val ~= nil then
+                if typeFunction(val) == "table" then printFunction("[VERBOSE] Found global table: " .. toStringFunction(key))
+                elseif typeFunction(val) == "function" then printFunction("[VERBOSE] Found global function: " .. toStringFunction(key))
+                else printFunction("[VERBOSE] Found global value: " .. toStringFunction(key) .. " = " .. toStringFunction(val)) end
+            else
+                printFunction("[VERBOSE] Missing field, providing dummy function: " .. toStringFunction(key))
+                val = function() if configuration.VERBOSE then printFunction("[Missing Function] Called: " .. toStringFunction(key) .. " with 0 arguments") end return nil end
+            end
         end
-        local dn = bj("Enum." .. aE(b4), false)
-        t.registry[dn] = "Enum." .. aE(b4)
-        return dn
-    end
-end
-function q.get_output()
-    return aB()
-end
-function q.save(aD)
-    return aC(aD)
-end
-function q.get_call_graph()
-    return t.call_graph
-end
-function q.get_string_refs()
-    return t.string_refs
-end
-function q.get_stats()
-    return {
-        total_lines = #t.output,
-        remote_calls = #t.call_graph,
-        suspicious_strings = #t.string_refs,
-        proxies_created = t.proxy_id
-    }
-end
-local eE = {
-    callId = "SENVIELLE_",
-    binaryOperatorNames = {
-        ["and"] = "AND", ["or"] = "OR", [">"] = "GT", ["<"] = "LT",
-        [">="] = "GE", ["<="] = "LE", ["=="] = "EQ", ["~="] = "NEQ", [".."] = "CAT"
-    }
-}
-function eE:hook(al)
-    return self.callId .. al
-end
-function eE:process_expr(eF)
-    if not eF then
-        return "nil"
-    end
-    if type(eF) == "string" then
-        return eF
-    end
-    local eG = eF.tag or eF.kind
-    if eG == "number" or eG == "string" then
-        local aF = eG == "string" and string.format("%q", eF.text) or (eF.value or eF.text)
-        if r.CONSTANT_COLLECTION then
-            return string.format("%sGET(%s)", self.callId, aF)
+        return val
+    end,
+    __newindex = function(tbl, key, val) rawset(globalBase, key, val) end
+})
+_G._G = globalMeta
+function proxyTable.reset()
+    dumperState = {output = {}, indent = 0, registry = {}, reverse_registry = {}, names_used = {}, parent_map = {}, property_store = {}, call_graph = {}, variable_types = {}, string_refs = {}, proxy_id = 0, callback_depth = 0, pending_iterator = false, last_http_url = nil, last_emitted_line = nil, repetition_count = 0, current_size = 0, limit_reached = false, ls_counter = 0, captured_constants = {}}
+    _at.mem = {}
+    _at.tags = {}
+    _at.sigs = {}
+    _at.acts = {}
+    _at.json = {}
+    _at.enum = {}
+    _at.svcCache = {}
+    _at.typeOverride = {}
+    _at.connState = {}
+    _at.pendingHeartbeat = {}
+    _at.locEntries = {}
+    _at.userdata = {}
+    _at.localPlayer = nil
+    setmetatable(_at.userdata, {__mode = "k"})
+    _at.debugIds = {}
+    setmetatable(_at.debugIds, {__mode = "k"})
+    _at.debugIdCtr = 0
+    uiCounters = {}
+    game = createProxyObject("game", true)
+    workspace = createProxyObject("workspace", true)
+    script = createProxyObject("script", true)
+    Enum = createProxyObject("Enum", true)
+    shared = createProxyObject("shared", true)
+    dumperState.property_store[game] = {PlaceId = numericArg, GameId = numericArg, placeId = numericArg, gameId = numericArg}
+    dumperState.property_store[script] = {Name = "DumpedScript", Parent = game, ClassName = "LocalScript"}
+    _G.game = game; _G.Game = game; _G.workspace = workspace; _G.Workspace = workspace; _G.script = script; _G.Enum = Enum; _G.shared = shared
+    local meta = debugLibrary.getmetatable(Enum)
+    meta.__index = function(_, key)
+        if key == proxyList or key == "__proxy_id" then return rawget(_, key) end
+        local enumName = "Enum." .. formatValue(key)
+        if not _at.enum[enumName] then
+            local enumProxy = createProxyObject(enumName, false)
+            dumperState.registry[enumProxy] = enumName
+            _at.enum[enumName] = enumProxy
         end
-        return aF
+        return _at.enum[enumName]
     end
-    if eG == "local" or eG == "global" then
-        return (eF.name or eF.token).text
-    elseif eG == "boolean" or eG == "bool" then
-        return tostring(eF.value)
-    elseif eG == "binary" then
-        local eH = self:process_expr(eF.lhsoperand)
-        local eI = self:process_expr(eF.rhsoperand)
-        local X = eF.operator.text
-        local eJ = self.binaryOperatorNames[X]
-        if eJ then
-            return string.format("%s%s(%s, %s)", self.callId, eJ, eH, eI)
+    seedCoreRobloxInstances()
+    if type(_G._bypassOnReset) == "function" then
+        local prevOutput = dumperState.output
+        local prevOutputCount = #prevOutput
+        local prevIndent = dumperState.indent
+        local prevLast = dumperState.last_emitted_line
+        local prevRep = dumperState.repetition_count
+        local prevSize = dumperState.current_size
+        local prevLimit = dumperState.limit_reached
+        pcall(_G._bypassOnReset)
+        for i = #prevOutput, prevOutputCount + 1, -1 do
+            prevOutput[i] = nil
         end
-        return string.format("(%s %s %s)", eH, X, eI)
-    elseif eG == "call" then
-        local dr = self:process_expr(eF.func)
-        local bA = {}
-        for L, b5 in ipairs(eF.arguments) do
-            bA[L] = self:process_expr(b5.node or b5)
-        end
-        return string.format("%sCALL(%s, %s)", self.callId, dr, table.concat(bA, ", "))
-    elseif eG == "indexname" or eG == "index" then
-        local bS = self:process_expr(eF.expression)
-        local ba = eG == "indexname" and string.format("%q", eF.index.text) or self:process_expr(eF.index)
-        return string.format("%sCHECKINDEX(%s, %s)", self.callId, bS, ba)
+        dumperState.output = prevOutput
+        dumperState.indent = prevIndent
+        dumperState.last_emitted_line = prevLast
+        dumperState.repetition_count = prevRep
+        dumperState.current_size = prevSize
+        dumperState.limit_reached = prevLimit
+    end
+end
+function proxyTable.get_output() return getFullOutput() end
+function proxyTable.save(file) return saveToFile(file) end
+function proxyTable.get_call_graph() return dumperState.call_graph end
+function proxyTable.get_string_refs() return dumperState.string_refs end
+function proxyTable.get_stats() return {total_lines = #dumperState.output, remote_calls = #dumperState.call_graph, suspicious_strings = #dumperState.string_refs, proxies_created = dumperState.proxy_id} end
+local dumper = {callId = "LUASPLOIT_", binaryOperatorNames = {["and"] = "AND", ["or"] = "OR", [">"] = "GT", ["<"] = "LT", [">="] = "GE", ["<="] = "LE", ["=="] = "EQ", ["~="] = "NEQ", [".."] = "CAT"}}
+function dumper:hook(code) return self.callId .. code end
+function dumper:process_expr(expr)
+    if not expr then return "nil" end
+    if typeFunction(expr) == "string" then return expr end
+    local tag = expr.tag or expr.kind
+    if tag == "number" or tag == "string" then
+        local val = tag == "string" and string.format("%q", expr.text) or (expr.value or expr.text)
+        if configuration.CONSTANT_COLLECTION then return string.format("%sGET(%s)", self.callId, val) end
+        return val
+    end
+    if tag == "local" or tag == "global" then return (expr.name or expr.token).text
+    elseif tag == "boolean" or tag == "bool" then return toStringFunction(expr.value)
+    elseif tag == "binary" then
+        local lhs = self:process_expr(expr.lhsoperand)
+        local rhs = self:process_expr(expr.rhsoperand)
+        local op = expr.operator.text
+        local opName = self.binaryOperatorNames[op]
+        if opName then return string.format("%s%s(%s, %s)", self.callId, opName, lhs, rhs) end
+        return string.format("(%s %s %s)", lhs, op, rhs)
+    elseif tag == "call" then
+        local func = self:process_expr(expr.func)
+        local args = {}
+        for i, node in ipairsFunction(expr.arguments) do args[i] = self:process_expr(node.node or node) end
+        return string.format("%sCALL(%s, %s)", self.callId, func, table.concat(args, ", "))
+    elseif tag == "indexname" or tag == "index" then
+        local exprStr = self:process_expr(expr.expression)
+        local keyStr = tag == "indexname" and string.format("%q", expr.index.text) or self:process_expr(expr.index)
+        return string.format("%sCHECKINDEX(%s, %s)", self.callId, exprStr, keyStr)
     end
     return "nil"
 end
-function eE:process_statement(eF)
-    if not eF then
-        return ""
+function dumper:process_statement(stmt)
+    if not stmt then return "" end
+    local tag = stmt.tag
+    if tag == "local" or tag == "assign" then
+        local vars, vals = {}, {}
+        for _, node in ipairsFunction(stmt.variables or {}) do table.insert(vars, self:process_expr(node.node or node)) end
+        for _, node in ipairsFunction(stmt.values or {}) do table.insert(vals, self:process_expr(node.node or node)) end
+        return (tag == "local" and "local " or "") .. table.concat(vars, ", ") .. " = " .. table.concat(vals, ", ")
+    elseif tag == "block" then
+        local stmts = {}
+        for _, s in ipairsFunction(stmt.statements or {}) do table.insert(stmts, self:process_statement(s)) end
+        return table.concat(stmts, "; ")
     end
-    local eG = eF.tag
-    if eG == "local" or eG == "assign" then
-        local eK, eL = {}, {}
-        for W, b5 in ipairs(eF.variables or {}) do
-            table.insert(eK, self:process_expr(b5.node or b5))
-        end
-        for W, b5 in ipairs(eF.values or {}) do
-            table.insert(eL, self:process_expr(b5.node or b5))
-        end
-        return (eG == "local" and "local " or "") .. table.concat(eK, ", ") .. " = " .. table.concat(eL, ", ")
-    elseif eG == "block" then
-        local b9 = {}
-        for W, eM in ipairs(eF.statements or {}) do
-            table.insert(b9, self:process_statement(eM))
-        end
-        return table.concat(b9, "; ")
-    end
-    return self:process_expr(eF) or ""
+    return self:process_expr(stmt) or ""
 end
-function q.dump_file(eN, eO)
-    q.reset()
-    az("this file is generated using SENVIELLE")
-    local as = o.open(eN, "rb")
-    if not as then
+local function _loosePasteCode(code)
+    if typeFunction(code) ~= "string" then return code end
+    code = code:gsub("```lua", ""):gsub("```", "")
+    return code
+end
+local function _loadLooseChunk(code, chunkName)
+    local sanitized = processString(_loosePasteCode(code))
+    local lines = {}
+    sanitized:gsub("([^\n]*)\n?", function(line)
+        if line ~= "" or #lines == 0 or sanitized:sub(-1) == "\n" then table.insert(lines, line) end
+    end)
+    local skipped = {}
+    for _ = 1, 400 do
+        local current = table.concat(lines, "\n")
+        local func, err = loadFunction(current, chunkName)
+        if func then return func, nil, current, skipped end
+        local lineNo = toNumberFunction(toStringFunction(err):match("%]:(%d+):") or toStringFunction(err):match(":(%d+):"))
+        if not lineNo or not lines[lineNo] or skipped[lineNo] then return nil, err, current, skipped end
+        skipped[lineNo] = lines[lineNo]
+        lines[lineNo] = "-- " .. lines[lineNo]
+    end
+    return nil, "too many invalid loose-paste lines", table.concat(lines, "\n"), skipped
+end
+function proxyTable.dump_file(inputPath, outputPath)
+    proxyTable.reset()
+    local file = ioLibrary.open(inputPath, "rb")
+    if not file then
+    printFunction("error: cannot open input")
         return false
     end
-    local al = as:read("*a")
-    as:close()
-    B("[Dumper] Sanitizing Luau and Binary Literals...")
-    local eP = I(al)
-    local R, eQ = e(eP, "Obfuscated_Script")
-    if not R then
-        B("\n[LUA_LOAD_FAIL] " .. m(eQ))
+    local code = file:read("*a")
+    file:close()
+    printFunction("input: normalize")
+    local func, err, sanitized, skipped = _loadLooseChunk(code, "Obfuscated_Script")
+    if not func then
+        printFunction("error: load " .. toStringFunction(err))
         return false
     end
-    local eR = setmetatable({
-        LuraphContinue = function() end,
-        script = script, game = game, workspace = workspace,
-        SENVIELLE_CHECKINDEX = function(x, ba)
-            local aF = x[ba]
-            if j(aF) == "table" and not t.registry[aF] then
-                t.lar_counter = t.lar_counter + 1
-                t.registry[aF] = "Vtab" .. t.lar_counter
+    if skipped then
+        local skippedCount = 0
+        for _ in pairsFunction(skipped) do skippedCount = skippedCount + 1 end
+        if skippedCount > 0 then printFunction("input: skipped-lines=" .. toStringFunction(skippedCount)) end
+    end
+    local _SANDBOX_BLOCK = {
+        io=true, os=true, debug=true, dofile=true, loadfile=true,
+        require=true, package=true, socket=true, ffi=true,
+        collectgarbage=true,
+    }
+    local _rawTb = debugLibrary and debugLibrary.traceback
+    local _badTbWords = {
+        "sandbox","hook","intercept","mock","proxy","virtual_env",
+        "decompil","emulat","simulat","fake_","getupval","hookfunc",
+        "replaceclos","newcclos","restorefunction","bypass","dumper",
+    }
+    local _tbWrapper = function(thread, msg, level)
+        local ok, tb
+        if _rawTb then
+            if typeFunction(thread) == "thread" then
+                ok, tb = pcallFunction(_rawTb, thread, msg, level)
+            else
+                ok, tb = pcallFunction(_rawTb, thread, msg)
             end
-            return aF
-        end,
-        SENVIELLE_GET = function(b5) return b5 end,
-        SENVIELLE_CALL = function(as, ...) return as(...) end,
-        SENVIELLE_NAMECALL = function(eS, em, ...) return eS[em](eS, ...) end,
-        pcall = function(as, ...)
-            local dg = {g(as, ...)}
-            if not dg[1] and m(dg[2]):match("TIMEOUT") then
-                i(dg[2], 0)
-            end
-            return table.unpack(dg)
         end
-    }, {__index = _G, __newindex = _G})
-    if setfenv then
-        setfenv(R, eR)
+        if not ok or typeFunction(tb) ~= "string" then
+            return "stack traceback:\nt[RobloxGameScript]: in function <RobloxGameScript:1>"
+        end
+        local lines = {}
+        for line in (tb .. "\n"):gmatch("([^\n]*)\n") do
+            local lo = line:lower()
+            local bad = false
+            for _, w in next, _badTbWords do
+                if lo:find(w, 1, true) then bad = true; break end
+            end
+            if not bad then lines[#lines + 1] = line end
+        end
+        local cleaned = table.concat(lines, "\n")
+        cleaned = cleaned:gsub("%[([%w%+%/]+)%]", function(inner)
+            if #inner + 2 < 10 then return "[RobloxGameScript]" end
+            return "[" .. inner .. "]"
+        end)
+        if #cleaned < 20 then
+            return "stack traceback:\nt[RobloxGameScript]: in function <RobloxGameScript:1>"
+        end
+        return cleaned
     end
-    B("[Dumper] Executing Protected VM...")
-    local eT = p.clock()
-    b(function()
-        if p.clock() - eT > r.TIMEOUT_SECONDS then
-            error("TIMEOUT", 0)
+    local _SAFE_DEBUG = {
+        getinfo = function(func, ...)
+            if typeFunction(func) == "number" then
+                return nil
+            end
+            return {source = "=[C]", what = "C", name = "C function", short_src = "[C]"}
+        end,
+        traceback  = _tbWrapper,
+        getupvalue = function(fn, i) return nil end,
+    }
+    local _SAFE_OS = {
+        clock = function() local _bc=rawget(_G,"_bypassClock"); return _bc and _bc() or osLibrary.clock() end,
+        time  = osLibrary.time,
+        date  = osLibrary.date,
+    }
+    local env = setmetatable({
+        _VERSION = "Luau",
+        LuraphContinue = nil,
+        __LC__ = function() end,
+        script = script, game = game, workspace = workspace,
+        io      = nil,
+        os      = _SAFE_OS,
+        debug   = _SAFE_DEBUG,
+        error   = _origError,
+        dofile  = nil,
+        loadfile = nil,
+        require = nil,
+        package = nil,
+        socket  = nil,
+        ffi     = nil,
+        collectgarbage = nil,
+        newproxy = newproxy,
+        -- hide _G metatable from scripts
+        getmetatable = function(obj)
+            if obj == _G or obj == env then return nil end
+            if _at.userdata[obj] then return getMetatableFunction(obj) end
+            if isProxy(obj) then return "The metatable is locked" end
+            return getMetatableFunction(obj)
+        end,
+        LUASPLOIT_CHECKINDEX = function(tbl, key)
+            local val = tbl[key]
+            if typeFunction(val) == "table" and not dumperState.registry[val] then
+                dumperState.ls_counter = dumperState.ls_counter + 1
+                dumperState.registry[val] = "v" .. dumperState.ls_counter
+            end
+            return val
+        end,
+        LUASPLOIT_GET = function(v) return v end,
+        LS_CALL = function(f, ...)
+            if typeFunction(f) ~= "function" then return nil end
+            return f(...)
+        end,
+        LS_NAMECALL = function(t, method, ...)
+            if typeFunction(t) ~= "table" then return nil end
+            if typeFunction(t[method]) ~= "function" then return nil end
+            return t[method](t, ...)
+        end,
+        LUASPLOIT_CALL = function(f, ...) return f(...) end,
+        LUASPLOIT_NAMECALL = function(t, method, ...) return t[method](t, ...) end,
+        pcall = function(f, ...)
+            local override = rawget(_G, "_bypassPcall")
+            if typeFunction(override) == "function" then
+                local res = {override(pcallFunction, f, ...)}
+                if not res[1] and toStringFunction(res[2]):match("TIMEOUT") then errorFunction(res[2], 0) end
+                return unpack(res)
+            end
+            local res = {pcallFunction(f, ...)}
+            if not res[1] and toStringFunction(res[2]):match("TIMEOUT") then errorFunction(res[2], 0) end
+            return unpack(res)
+        end
+    }, {
+        __index = function(_, k)
+            if _SANDBOX_BLOCK[k] then return nil end
+            -- block dumper internal globals from leaking into script env
+            if k == "LuraphContinue" or k == "__FLAMEDUMPER_REQUIRE_ONLY"
+            or k == "proxyTable" or k == "dumperState" or k == "_at" then
+                return nil
+            end
+            return _G[k]
+        end,
+        __newindex = _G
+    })
+    do
+        local _applied = false
+        if debugLibrary and debugLibrary.getupvalue and debugLibrary.setupvalue then
+            for _i = 1, 256 do
+                local _n = debugLibrary.getupvalue(func, _i)
+                if not _n then break end
+                if _n == "_ENV" then
+                    debugLibrary.setupvalue(func, _i, env)
+                    _applied = true
+                    break
+                end
+            end
+        end
+        if not _applied and type(setfenv) == "function" then
+            local _si = debugLibrary and debugLibrary.getinfo and debugLibrary.getinfo(setfenv, "S")
+            if _si and _si.what == "C" then setfenv(func, env) end
+        end
+    end
+    printFunction("vm: running")
+    local startClock = osLibrary.clock()
+    setHook(function()
+        if osLibrary.clock() - startClock > configuration.TIMEOUT_SECONDS then
+            errorFunction("TIMEOUT", 0)
         end
     end, "", 1000)
-    local eo, eU = h(function() R() end, function(ds) return tostring(ds) end)
-    b()
-    if not eo then
-        az("Terminated: " .. eU)
+    local success, runErr = xpcallFunction(function() func() end, function(e) return toStringFunction(e) end)
+    setHook()
+    if not success and not toStringFunction(runErr):match("TIMEOUT") then
+        emitComment("Runtime: " .. toStringFunction(runErr))
     end
-    return q.save(eO or r.OUTPUT_FILE)
-end
-function q.dump_string(al, eO)
-    q.reset()
-    az("this file is generated using SENVIELLE")
-    aA()
-    if al then
-        al = I(al)
-    end
-    local R, an = e(al)
-    if not R then
-        az("Load Error: " .. (an or "unknown"))
-        return false, an
-    end
-    xpcall(function() R() end, function() end)
-    if eO then
-        return q.save(eO)
-    end
-    return true, aB()
-end
-if arg and arg[1] then
-    local eo = q.dump_file(arg[1], arg[2])
-    if eo then
-        B("Saved to: " .. (arg[2] or r.OUTPUT_FILE))
-        local eV = q.get_stats()
-        B(string.format("Lines: %d | Remotes: %d | Strings: %d", eV.total_lines, eV.remote_calls, eV.suspicious_strings))
-    end
-else
-    local as = o.open("obfuscated.lua", "rb")
-    if as then
-        as:close()
-        local eo = q.dump_file("obfuscated.lua")
-        if eo then
-            B("Saved to: " .. r.OUTPUT_FILE)
-            B(q.get_output())
-        end
+    local saved = proxyTable.save(outputPath or configuration.OUTPUT_FILE)
+    if saved then
+        local stats = proxyTable.get_stats()
+        printFunction(string.format("done: lines=%d remotes=%d strings=%d",
+            stats.total_lines, stats.remote_calls, stats.suspicious_strings))
     else
-        B("Usage: lua dumper.lua <input> [output] [key]")
+        printFunction("error: write failed")
     end
+    return saved
 end
-_G.LuraphContinue = function() end
-task.cancel = function(thread) at("task.cancel(thread)") end
-task.synchronize = function() at("task.synchronize()") end
-task.desynchronize = function() at("task.desynchronize()") end
-string.split = string.split or function(str, sep)
-    local result = {}
-    for match in string.gmatch(str, "([^" .. (sep or "%s") .. "]+)") do
-        table.insert(result, match)
+function proxyTable.dump_string(code, outputPath)
+    proxyTable.reset()
+    if code then code = processString(code) end
+    local func, err = loadFunction(code)
+    if not func then
+        emitComment("Load Error: " .. (err or "unknown"))
+        if outputPath then proxyTable.save(outputPath) end
+        return false, err
     end
-    return result
-end
-string.starts = function(str, start)
-    return string.sub(str, 1, #start) == start
-end
-string.ends = function(str, ending)
-    return ending == "" or string.sub(str, -#ending) == ending
-end
-string.trim = function(str)
-    return string.match(str, "^%s*(.-)%s*$")
-end
-table.clone = function(tbl)
-    local copy = {}
-    for k, v in pairs(tbl) do
-        copy[k] = v
-    end
-    return copy
-end
-table.find = function(tbl, value)
-    if j(tbl) == "function" then
-        if G(value) or w(value) then return 1 end
-        return nil
-    end
-    for i, v in ipairs(tbl) do
-        if rawequal(v, value) or v == value then return i end
-    end
-    return nil
-end
-math.round = function(x)
-    return math.floor(x + 0.5)
-end
-math.sign = function(x)
-    if x > 0 then return 1 elseif x < 0 then return -1 else return 0 end
-end
-math.clamp = function(x, min, max)
-    return math.max(min, math.min(max, x))
-end
-debug.getregistry = function()
-    return _G
-end
-debug.getlocal = function(level, index)
-    return nil
-end
-debug.setlocal = function(level, index, value)
-end
-hookfunction = function(old, new)
-    return old
-end
-hookmetamethod = function(obj, method, hook)
-    return function() end
-end
-local function deobfuscate_string(obfuscated)
-    local patterns = {
-        {pattern = "\\x(%x%x)", replace = function(h) return string.char(tonumber(h, 16)) end},
-        {pattern = "\\(%d+)", replace = function(d) return string.char(tonumber(d)) end},
-        {pattern = "\\\\", replace = "\\"},
+    local _DS_BLOCK = {
+        io=true, os=true, dofile=true, loadfile=true,
+        require=true, package=true, socket=true, ffi=true,
+        collectgarbage=true, debug=true,
     }
-    local result = obfuscated
-    for _, p in pairs(patterns) do
-        result = result:gsub(p.pattern, p.replace)
-    end
-    return result
-end
-_G.deobfuscate_string = deobfuscate_string
-getrenv = function()
-    return getfenv()
-end
-getgenv = function()
-    return _G
-end
-local old_load = loadstring
-loadstring = function(str, chunkname)
-    local cleaned = str
-    cleaned = cleaned:gsub("LuraphContinue%(", "LuraphContinue()")
-    cleaned = cleaned:gsub("LuraphContinue%d+%(", "LuraphContinue()")
-    return old_load(cleaned, chunkname)
-end
-local original_getmetatable = getmetatable
-getmetatable = function(obj)
-    if obj == nil then return nil end
-    return original_getmetatable(obj)
-end
-if not bit then
-    bit = {
-        band = function(a, b) return a & b end,
-        bor = function(a, b) return a | b end,
-        bxor = function(a, b) return a ~ b end,
-        bnot = function(a) return ~a & 0xFFFFFFFF end,
-        lshift = function(a, n) return (a * 2^n) & 0xFFFFFFFF end,
-        rshift = function(a, n) return math.floor(a / 2^n) & 0xFFFFFFFF end,
-    }
-end
-function safe_string(str)
-    if not str then return "nil" end
-    if #str > 500 then
-        return string.format('"%s..."', str:sub(1, 500):gsub('"', '\\"'))
-    end
-    return string.format("%q", str):gsub("\\\n", "\\n")
-end
-original_error = error
-function error(msg, level)
-    if type(msg) == "string" and msg:match("TIMEOUT") then
-        print("[Deobfuscator] Timeout detected, continuing...")
-        return
-    end
-    original_error(msg, level)
-end
-function all_pairs(t)
-    return pairs(t or {})
-end
-function safe_pairs(t)
-    if type(t) ~= "table" then return function() end end
-    return pairs(t)
-end
-if not rawget(Enum, "MembershipType") then
-    rawset(Enum, "MembershipType", bj("Enum.MembershipType", false))
-end
-local membership_items = {
-    {Name = "None", Value = 0},
-    {Name = "Premium", Value = 4},
-}
-for _, item in ipairs(membership_items) do
-    local obj = bj("Enum.MembershipType." .. item.Name, false)
-    t.registry[obj] = "Enum.MembershipType." .. item.Name
-    if not t.property_store[obj] then t.property_store[obj] = {} end
-    t.property_store[obj].Name = item.Name
-    t.property_store[obj].Value = item.Value
-    rawget(Enum, "MembershipType")[item.Name] = obj
-end
-local mps = game:GetService("MarketplaceService")
-if mps and not mps.PromptPremiumPurchase then
-    mps.PromptPremiumPurchase = function(self, player)
-        return true
-    end
-end
-if not rawget(Enum, "MembershipType") then
-    rawset(Enum, "MembershipType", bj("Enum.MembershipType", false))
-    local membership_items = {
-        {Name = "None", Value = 0},
-        {Name = "Premium", Value = 4},
-    }
-    for _, item in ipairs(membership_items) do
-        local obj = bj("Enum.MembershipType." .. item.Name, false)
-        t.registry[obj] = "Enum.MembershipType." .. item.Name
-        if not t.property_store[obj] then t.property_store[obj] = {} end
-        t.property_store[obj].Name = item.Name
-        t.property_store[obj].Value = item.Value
-        rawget(Enum, "MembershipType")[item.Name] = obj
-    end
-end
-local function add_membership_type_to_player(proxy)
-    if proxy and not t.property_store[proxy] then
-        t.property_store[proxy] = {}
-    end
-    if proxy then
-        t.property_store[proxy].MembershipType = rawget(Enum, "MembershipType").None
-    end
-end
-local original_LocalPlayer = game:GetService("Players").LocalPlayer
-if original_LocalPlayer then
-    add_membership_type_to_player(original_LocalPlayer)
-end
-if not rawget(Enum, "ActionType") then
-    rawset(Enum, "ActionType", bj("Enum.ActionType", false))
-end
-local action_type_items = {
-    {Name = "Draw", Value = 1},
-    {Name = "Win", Value = 2},
-    {Name = "Drag", Value = 3},
-    {Name = "Click", Value = 4},
-}
-for _, item in ipairs(action_type_items) do
-    local obj = bj("Enum.ActionType." .. item.Name, false)
-    t.registry[obj] = "Enum.ActionType." .. item.Name
-    if not t.property_store[obj] then
-        t.property_store[obj] = {}
-    end
-    t.property_store[obj].Name = item.Name
-    t.property_store[obj].Value = item.Value
-    rawget(Enum, "ActionType")[item.Name] = obj
-end
-if not rawget(_G, "DateTime") then
-    rawset(_G, "DateTime", {
-        fromUnixTimestamp = function(timestamp)
-            return {
-                FormatUniversalTime = function(self, format, locale) return "1970-01-01" end,
-                FormatLocalTime = function(self, format, locale) return "1970-01-01" end,
-                ToIsoDate = function(self) return "1970-01-01" end,
-                UnixTimestamp = 0, UnixTimestampMillis = 0, Year = 1970, Month = 1, Day = 1,
-                Hour = 0, Minute = 0, Second = 0
-            }
+    local _DS_OS = { clock=function() local _bc=rawget(_G,"_bypassClock"); return _bc and _bc() or osLibrary.clock() end, time=osLibrary.time, date=osLibrary.date }
+    local dsEnv = setmetatable({
+        _VERSION="Luau",
+        io=nil, os=_DS_OS, debug=nil, dofile=nil, loadfile=nil,
+        require=nil, package=nil, socket=nil, ffi=nil,
+        collectgarbage=nil, newproxy=newproxy,
+        pcall = function(f, ...)
+            local override = rawget(_G, "_bypassPcall")
+            if typeFunction(override) == "function" then
+                local res = {override(pcallFunction, f, ...)}
+                if not res[1] and toStringFunction(res[2]):match("TIMEOUT") then errorFunction(res[2], 0) end
+                return unpack(res)
+            end
+            local res = {pcallFunction(f, ...)}
+            if not res[1] and toStringFunction(res[2]):match("TIMEOUT") then errorFunction(res[2], 0) end
+            return unpack(res)
         end,
-        fromUnixTimestampMillis = function(timestamp)
-            return _G.DateTime.fromUnixTimestamp(timestamp // 1000)
+    }, {
+        __index = function(_, k)
+            if _DS_BLOCK[k] then return nil end
+            return _G[k]
         end,
-        fromIsoDate = function(isoDate)
-            return _G.DateTime.fromUnixTimestamp(0)
-        end,
-        now = function()
-            return _G.DateTime.fromUnixTimestamp(os.time())
-        end
+        __newindex = _G,
     })
-end
-if not string.split then
-    string.split = function(str, sep)
-        local result = {}
-        for match in string.gmatch(str, "([^" .. (sep or "%s") .. "]+)") do
-            table.insert(result, match)
-        end
-        return result
-    end
-end
-local original_workspace = workspace
-local workspace_mt = getmetatable(workspace) or {}
-workspace_mt.BulkMoveTo = function(self, parts, cframes, bulkMoveMode)
-    if type(parts) == "table" and type(cframes) == "table" then
-        for i, part in ipairs(parts) do
-            if i <= #cframes and part then
-                if not t.property_store[part] then
-                    t.property_store[part] = {}
-                end
-                t.property_store[part].CFrame = cframes[i]
-                part.CFrame = cframes[i]
-            end
-        end
-    end
-    return true
-end
-setmetatable(original_workspace, workspace_mt)
-local original_bulk_move_mode = Enum.BulkMoveMode
-if not original_bulk_move_mode then
-    rawset(Enum, "BulkMoveMode", bj("Enum.BulkMoveMode", false))
-    local bulk_move_items = {
-        {Name = "FireCFrameChanged", Value = 0},
-        {Name = "FireAll", Value = 1},
-    }
-    for _, item in ipairs(bulk_move_items) do
-        local obj = bj("Enum.BulkMoveMode." .. item.Name, false)
-        t.registry[obj] = "Enum.BulkMoveMode." .. item.Name
-        if not t.property_store[obj] then t.property_store[obj] = {} end
-        t.property_store[obj].Name = item.Name
-        t.property_store[obj].Value = item.Value
-        rawget(Enum, "BulkMoveMode")[item.Name] = obj
-    end
-end
-local original_bj = bj
-function bj(...)
-    local proxy = original_bj(...)
-    if proxy and t.registry[proxy] and t.registry[proxy]:match("Folder") then
-        if not t.property_store[proxy] then
-            t.property_store[proxy] = {}
-        end
-        if not t.property_store[proxy].Children then
-            t.property_store[proxy].Children = {}
-        end
-        local mt = getmetatable(proxy)
-        local old_index = mt.__index
-        mt.__index = function(self, key)
-            if key == "GetChildren" then
-                return function(self)
-                    return t.property_store[self].Children or {}
-                end
-            end
-            if key == "ChildAdded" or key == "ChildRemoved" then
-                return bj("RBXScriptSignal", false)
-            end
-            if old_index then
-                return old_index(self, key)
-            end
-            return nil
-        end
-    end
-    return proxy
-end
-local log_service = game:GetService("LogService")
-if not log_service then
-    local LogService = bj("LogService", false)
-    rawset(game, "LogService", LogService)
-    t.property_store[LogService] = {}
-    log_service = LogService
-end
-if not log_service.GetLogHistory then
-    log_service.GetLogHistory = function(self)
-        return {}
-    end
-end
-if not log_service.MessageOut then
-    local message_out_signal = bj("RBXScriptSignal", false)
-    t.registry[message_out_signal] = "LogService.MessageOut"
-    rawset(log_service, "MessageOut", message_out_signal)
-end
-if not _G.LogService then
-    _G.LogService = log_service
-end
-if not rawget(_G, "RBXScriptSignal") then
-    _G.RBXScriptSignal = {
-        Connect = function(self, callback) return {Disconnect = function() end} end,
-        Wait = function(self) return end,
-        Once = function(self, callback) return {Disconnect = function() end} end
-    }
-end
-local PolicyService = bj("PolicyService", true)
-t.property_store[PolicyService] = t.property_store[PolicyService] or {}
-local policy_mt = getmetatable(PolicyService) or {}
-
-policy_mt.GetPolicyForPlayer = function(self, player)
-    at(string.format("%s:GetPolicyForPlayer(%s)", t.registry[self] or "PolicyService", aZ(player)))
-    local policy = bj("Policy", false)
-    aW(policy, "policy")
-    t.property_store[policy] = {Name = "DefaultPolicy", Version = 1, Rules = {}}
-    return policy
-end
-
-policy_mt.GetPolicies = function(self)
-    at(string.format("%s:GetPolicies()", t.registry[self] or "PolicyService"))
-    return {}
-end
-
-policy_mt.GetPolicyById = function(self, policyId)
-    at(string.format("%s:GetPolicyById(%s)", t.registry[self] or "PolicyService", aZ(policyId)))
-    local policy = bj("Policy", false)
-    aW(policy, "policy")
-    return policy
-end
-
-policy_mt.GetCurrentPolicy = function(self)
-    at(string.format("%s:GetCurrentPolicy()", t.registry[self] or "PolicyService"))
-    local policy = bj("Policy", false)
-    aW(policy, "currentPolicy")
-    return policy
-end
-
-policy_mt.GetPolicyForUser = function(self, userId)
-    at(string.format("%s:GetPolicyForUser(%s)", t.registry[self] or "PolicyService", aZ(userId)))
-    local policy = bj("Policy", false)
-    aW(policy, "userPolicy")
-    return policy
-end
-
-policy_mt.IsSubjectToPolicy = function(self, player, policyName)
-    at(string.format("%s:IsSubjectToPolicy(%s, %s)", t.registry[self] or "PolicyService", aZ(player), aH(policyName)))
-    return true
-end
-
-policy_mt.GetPolicyViolations = function(self, player)
-    at(string.format("%s:GetPolicyViolations(%s)", t.registry[self] or "PolicyService", aZ(player)))
-    return {}
-end
-
-policy_mt.GetAllowedContent = function(self, contentType, policyId)
-    at(string.format("%s:GetAllowedContent(%s, %s)", t.registry[self] or "PolicyService", aZ(contentType), aZ(policyId)))
-    return {}
-end
-
-policy_mt.IsContentAllowed = function(self, contentId, contentType, player)
-    at(string.format("%s:IsContentAllowed(%s, %s, %s)", t.registry[self] or "PolicyService", aZ(contentId), aZ(contentType), aZ(player)))
-    return true
-end
-
-policy_mt.GetRestrictedFeatures = function(self, player)
-    at(string.format("%s:GetRestrictedFeatures(%s)", t.registry[self] or "PolicyService", aZ(player)))
-    return {}
-end
-
-policy_mt.IsFeatureRestricted = function(self, feature, player)
-    at(string.format("%s:IsFeatureRestricted(%s, %s)", t.registry[self] or "PolicyService", aZ(feature), aZ(player)))
-    return false
-end
-
-setmetatable(PolicyService, policy_mt)
-
-if not game:FindFirstChild("PolicyService") then
-    rawset(game, "PolicyService", PolicyService)
-end
-_G.PolicyService = PolicyService
-local old_bj = bj
-local function create_real_value_proxy(value, type_name)
-    local proxy = {}
-    local mt = {}
-    if type_name == "number" then
-        mt.__tostring = function() return tostring(value) end
-        mt.__add = function(a, b) return create_real_value_proxy((rawget(a, "__v") or value) + (type(b) == "table" and rawget(b, "__v") or b), "number") end
-        mt.__sub = function(a, b) return create_real_value_proxy((rawget(a, "__v") or value) - (type(b) == "table" and rawget(b, "__v") or b), "number") end
-        mt.__mul = function(a, b) return create_real_value_proxy((rawget(a, "__v") or value) * (type(b) == "table" and rawget(b, "__v") or b), "number") end
-        mt.__div = function(a, b) return create_real_value_proxy((rawget(a, "__v") or value) / (type(b) == "table" and rawget(b, "__v") or b), "number") end
-        mt.__pow = function(a, b) return create_real_value_proxy((rawget(a, "__v") or value) ^ (type(b) == "table" and rawget(b, "__v") or b), "number") end
-        mt.__unm = function(a) return create_real_value_proxy(-(rawget(a, "__v") or value), "number") end
-        mt.__eq = function(a, b) return (rawget(a, "__v") or value) == (type(b) == "table" and rawget(b, "__v") or b) end
-        mt.__lt = function(a, b) return (rawget(a, "__v") or value) < (type(b) == "table" and rawget(b, "__v") or b) end
-        mt.__le = function(a, b) return (rawget(a, "__v") or value) <= (type(b) == "table" and rawget(b, "__v") or b) end
-    elseif type_name == "string" then
-        mt.__tostring = function() return value end
-        mt.__len = function() return #value end
-        mt.__concat = function(a, b)
-            local av = rawget(a, "__v") or value
-            local bv = type(b) == "table" and rawget(b, "__v") or b
-            return create_real_value_proxy(av .. tostring(bv), "string")
-        end
-        mt.__eq = function(a, b)
-            local av = rawget(a, "__v") or value
-            local bv = type(b) == "table" and rawget(b, "__v") or b
-            return av == bv
-        end
-    elseif type_name == "boolean" then
-        mt.__tostring = function() return tostring(value) end
-        mt.__eq = function(a, b)
-            local av = rawget(a, "__v") or value
-            local bv = type(b) == "table" and rawget(b, "__v") or b
-            return av == bv
-        end
-    end
-    rawset(proxy, "__v", value)
-    rawset(proxy, "__t", type_name)
-    mt.__index = function(self, key)
-        if key == "__v" or key == "__t" then return rawget(self, key) end
-        if type_name == "string" then
-            local str = rawget(self, "__v")
-            if string[key] then
-                return function(self, ...)
-                    local args = {...}
-                    for i, arg in ipairs(args) do
-                        if type(arg) == "table" and rawget(arg, "__v") then
-                            args[i] = rawget(arg, "__v")
-                        end
-                    end
-                    local result = string[key](str, table.unpack(args))
-                    if type(result) == "string" then
-                        return create_real_value_proxy(result, "string")
-                    end
-                    if type(result) == "number" then
-                        return create_real_value_proxy(result, "number")
-                    end
-                    return result
+    do
+        local _applied = false
+        if debugLibrary and debugLibrary.getupvalue and debugLibrary.setupvalue then
+            for _i = 1, 256 do
+                local _n = debugLibrary.getupvalue(func, _i)
+                if not _n then break end
+                if _n == "_ENV" then
+                    debugLibrary.setupvalue(func, _i, dsEnv)
+                    _applied = true
+                    break
                 end
             end
         end
-        if type_name == "number" and math[key] then
-            return function(self, ...)
-                local args = {...}
-                for i, arg in ipairs(args) do
-                    if type(arg) == "table" and rawget(arg, "__v") then
-                        args[i] = rawget(arg, "__v")
-                    end
-                end
-                local result = math[key](rawget(self, "__v"), table.unpack(args))
-                if type(result) == "number" then
-                    return create_real_value_proxy(result, "number")
-                end
-                return result
+        if not _applied and type(setfenv) == "function" then
+            local _si = debugLibrary and debugLibrary.getinfo and debugLibrary.getinfo(setfenv, "S")
+            if _si and _si.what == "C" then setfenv(func, dsEnv) end
+        end
+    end
+    local startClock = osLibrary.clock()
+    setHook(function()
+        if osLibrary.clock() - startClock > configuration.TIMEOUT_SECONDS then
+            errorFunction("TIMEOUT", 0)
+        end
+    end, "", 1000)
+    xpcallFunction(function() func() end, function(e)
+        emitComment("Runtime: " .. toStringFunction(e))
+    end)
+    setHook()
+    if outputPath then return proxyTable.save(outputPath) end
+    return true, getFullOutput()
+end
+do
+    local bypassPath = (arg and arg[0] and arg[0]:match("^(.+[/])")) or ""
+    local ok, err = pcall(dofile, bypassPath .. "bypass.lua")
+    if not ok then
+        local ok2 = pcall(dofile, "bypass.lua")
+        if not ok2 then
+            printFunction("[dumper] bypass.lua not found, continuing without supplement")
+        end
+    end
+end
+
+_G.LuraphContinue = nil
+if not rawget(_G, "__FLAMEDUMPER_REQUIRE_ONLY") then
+    if arg and arg[1] then
+        local success = proxyTable.dump_file(arg[1], arg[2])
+        if success then end
+    else
+        local file = ioLibrary.open("obfuscated.lua", "rb")
+        if file then
+            file:close()
+            local success = proxyTable.dump_file("obfuscated.lua")
+            if success then
+                printFunction(proxyTable.get_output())
             end
-        end
-        return nil
-    end
-    mt.__newindex = function() end
-    mt.__pairs = function() return function() return nil end end
-    mt.__ipairs = mt.__pairs
-    setmetatable(proxy, mt)
-    t.registry[proxy] = value
-    t.variable_types[proxy] = type_name
-    return proxy
-end
-local function is_proxy_with_value(x)
-    if type(x) == "table" and rawget(x, "__v") ~= nil then
-        return true, rawget(x, "__v"), rawget(x, "__t")
-    end
-    return false, nil, nil
-end
-local original_type = type
-_G.type = function(x)
-    local is_proxy, val, tname = is_proxy_with_value(x)
-    if is_proxy then
-        return tname
-    end
-    if G(x) then
-        local reg = t.registry[x]
-        if reg and type(reg) == "string" then
-            if reg:match('^"') or reg:match("^'") or reg:match('^%[') then
-                return "string"
-            end
-            if tonumber(reg) ~= nil then
-                return "number"
-            end
-            if reg == "true" or reg == "false" then
-                return "boolean"
-            end
-        end
-        return "userdata"
-    end
-    return original_type(x)
-end
-local original_tonumber = tonumber
-_G.tonumber = function(x, base)
-    local is_proxy, val = is_proxy_with_value(x)
-    if is_proxy and type(val) == "number" then
-        return val
-    end
-    if is_proxy and type(val) == "string" then
-        return original_tonumber(val, base)
-    end
-    return original_tonumber(x, base)
-end
-local original_tostring = tostring
-_G.tostring = function(x)
-    local is_proxy, val = is_proxy_with_value(x)
-    if is_proxy then
-        return tostring(val)
-    end
-    if G(x) then
-        local reg = t.registry[x]
-        if reg then
-            if type(reg) == "string" and (reg:match('^"') or reg:match("^'")) then
-                local str = reg:sub(2, -2)
-                return str
-            end
-            return reg
-        end
-        return "Instance"
-    end
-    return original_tostring(x)
-end
-local original_getmetatable = getmetatable
-_G.getmetatable = function(x)
-    local is_proxy = is_proxy_with_value(x)
-    if is_proxy then
-        local mt = original_getmetatable(x)
-        if mt then return mt end
-        return nil
-    end
-    if G(x) then
-        return nil
-    end
-    return original_getmetatable(x)
-end
-local old_bj_original = bj
-bj = function(name, is_global, parent)
-    if type(name) == "string" and (name:match('^"') or name:match("^'")) then
-        local str_value = name:sub(2, -2)
-        return create_real_value_proxy(str_value, "string")
-    end
-    if type(name) == "number" or (type(name) == "string" and tonumber(name) ~= nil) then
-        local num_value = tonumber(name)
-        return create_real_value_proxy(num_value, "number")
-    end
-    if name == "true" then
-        return create_real_value_proxy(true, "boolean")
-    end
-    if name == "false" then
-        return create_real_value_proxy(false, "boolean")
-    end
-    return old_bj_original(name, is_global, parent)
-end
-local function fix_proxy_value_behavior(proxy, original_value, value_type)
-    if not proxy then return end
-    if value_type == "number" then
-        t.registry[proxy] = original_value
-    elseif value_type == "string" then
-        t.registry[proxy] = original_value
-    elseif value_type == "boolean" then
-        t.registry[proxy] = original_value
-    end
-    t.variable_types[proxy] = value_type
-end
-local original_aW = aW
-aW = function(x, name, var_type, source)
-    if var_type == "number" or var_type == "string" or var_type == "boolean" then
-        local id = "Var" .. (t.lar_counter + 1)
-        t.lar_counter = t.lar_counter + 1
-        t.registry[x] = id
-        t.reverse_registry[id] = x
-        t.variable_types[x] = var_type
-        if var_type == "number" and type(name) == "number" then
-            rawset(x, "__v", name)
-        end
-        if var_type == "string" and type(name) == "string" then
-            rawset(x, "__v", name)
-        end
-        if var_type == "boolean" then
-            rawset(x, "__v", name == "true" or name == true)
-        end
-        return id
-    end
-    return original_aW(x, name, var_type, source)
-end
-Vector3 = function(x, y, z)
-    local proxy = old_bj_original("Vector3", false)
-    local mt = getmetatable(proxy)
-    local real_value = {X = x or 0, Y = y or 0, Z = z or 0}
-    real_value.Magnitude = math.sqrt(real_value.X^2 + real_value.Y^2 + real_value.Z^2)
-    t.property_store[proxy] = real_value
-    if not mt.__index then
-        mt.__index = function(self, key)
-            if key == "X" then return t.property_store[self].X end
-            if key == "Y" then return t.property_store[self].Y end
-            if key == "Z" then return t.property_store[self].Z end
-            if key == "Magnitude" then return t.property_store[self].Magnitude end
-            if key == "Dot" then
-                return function(self, other)
-                    local v1 = self
-                    local v2 = other
-                    return v1.X * v2.X + v1.Y * v2.Y + v1.Z * v2.Z
-                end
-            end
-            if key == "Cross" then
-                return function(self, other)
-                    local v1 = self
-                    local v2 = other
-                    return Vector3(
-                        v1.Y * v2.Z - v1.Z * v2.Y,
-                        v1.Z * v2.X - v1.X * v2.Z,
-                        v1.X * v2.Y - v1.Y * v2.X
-                    )
-                end
-            end
-            return nil
+        else
+            printFunction("Usage: lua dumper.lua <input> [output] [key]")
         end
     end
-    if not mt.__newindex then
-        mt.__newindex = function(self, key, value)
-            if key == "X" then
-                t.property_store[self].X = value
-                t.property_store[self].Magnitude = math.sqrt(t.property_store[self].X^2 + t.property_store[self].Y^2 + t.property_store[self].Z^2)
-            elseif key == "Y" then
-                t.property_store[self].Y = value
-                t.property_store[self].Magnitude = math.sqrt(t.property_store[self].X^2 + t.property_store[self].Y^2 + t.property_store[self].Z^2)
-            elseif key == "Z" then
-                t.property_store[self].Z = value
-                t.property_store[self].Magnitude = math.sqrt(t.property_store[self].X^2 + t.property_store[self].Y^2 + t.property_store[self].Z^2)
-            end
-        end
-    end
-    return proxy
 end
-local original_typeof = typeof
-_G.typeof = function(x)
-    local is_proxy, val, tname = is_proxy_with_value(x)
-    if is_proxy then
-        if tname == "number" then return "number" end
-        if tname == "string" then return "string" end
-        if tname == "boolean" then return "boolean" end
-    end
-    if G(x) and t.property_store[x] and t.property_store[x].X ~= nil then
-        return "Vector3"
-    end
-    if G(x) then
-        local reg = t.registry[x]
-        if reg then
-            local match = reg:match("^(%a+)")
-            if match and (match == "Vector3" or match == "Vector2" or match == "CFrame" or match == "Ray" or match == "Color3" or match == "BrickColor" or match == "UDim2" or match == "UDim" or match == "TweenInfo" or match == "Rect" or match == "Region3") then
-                return match
-            end
-        end
-    end
-    return original_typeof(x)
-end
-local real_utf8 = utf8 or {}
-if not real_utf8.len then
-    real_utf8.len = function(s)
-        if type(s) == "string" then
-            local _, count = string.gsub(s, "[%z\1-\127\194-\244][\128-\191]*", "")
-            return count
-        end
-        local is_proxy, val, tname = is_proxy_with_value(s)
-        if is_proxy and tname == "string" then
-            local _, count = string.gsub(val, "[%z\1-\127\194-\244][\128-\191]*", "")
-            return count
-        end
-        return nil
-    end
-end
-utf8 = real_utf8
-_G.utf8 = utf8
-local real_string_mt = getmetatable("") or {}
-if not real_string_mt.__len then
-    real_string_mt.__len = function(s)
-        if type(s) == "string" then return #s end
-        local is_proxy, val = is_proxy_with_value(s)
-        if is_proxy and type(val) == "string" then
-            return #val
-        end
-        return 0
-    end
-    setmetatable("", real_string_mt)
-end
-return q -- akhirannya di sini:3
+return proxyTable
