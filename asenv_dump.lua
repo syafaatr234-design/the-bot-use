@@ -1,3 +1,4 @@
+local unpack = unpack or table.unpack
 local warn = warn or function() end
 
 local _origPcall = pcall
@@ -32,7 +33,7 @@ local configuration = {
     OUTPUT_FILE = "dumped_output.lua",
     VERBOSE = false,
     TRACE_CALLBACKS = true,
-    TIMEOUT_SECONDS = 6.57,
+    TIMEOUT_SECONDS = 24,
     MAX_REPEATED_LINES = 8,
     MIN_DEOBF_LENGTH = 150,
     MAX_OUTPUT_SIZE = 6 * 1024 * 1024,
@@ -93,8 +94,6 @@ local _at = {
     inMetaHook   = false,
     pendingHeartbeat = {},
     locEntries = {},
-    signalCallbacks = {},  -- AT5: live signal firing
-    animateScript = nil,   -- AT3: getrunningscripts
 }
 setmetatable(_at.debugIds, {__mode = "k"})
 setmetatable(_at.instTags, {__mode = "k"})
@@ -128,29 +127,6 @@ local function _setParent(child, parent)
     if parent then
         _at.children[parent] = _at.children[parent] or {}
         table.insert(_at.children[parent], child)
-        -- skip signal firing for internal proxy types
-        local childType = _at.typeOverride[child]
-        local parentType = _at.typeOverride[parent]
-        if childType == "RBXScriptSignal" or childType == "RBXScriptConnection"
-        or parentType == "RBXScriptSignal" or parentType == "RBXScriptConnection" then
-            return
-        end
-        -- fire ChildAdded on direct parent only
-        if _at.signalCallbacks[parent] then
-            for _, cb in ipairsFunction(_at.signalCallbacks[parent].ChildAdded or {}) do
-                pcallFunction(cb, child)
-            end
-        end
-        -- fire DescendantAdded on direct parent and its ancestors
-        local ancestor = parent
-        while ancestor do
-            if _at.signalCallbacks[ancestor] then
-                for _, cb in ipairsFunction(_at.signalCallbacks[ancestor].DescendantAdded or {}) do
-                    pcallFunction(cb, child)
-                end
-            end
-            ancestor = dumperState.parent_map[ancestor]
-        end
     end
 end
 local function _isDescendantOf(child, parent)
@@ -212,8 +188,8 @@ local function processString(inputString)
     local outputParts = {}
     local currentIndex, totalLength = 1, #inputString
     local function cleanEscapes(content)
-        return content:gsub( "(.)", function(escapedChar)
-            if escapedChar:match('[abfnrtv%\'%"%[%]0-9xu]') then
+        return content:gsub( "\\\\(.)", function(escapedChar)
+            if escapedChar:match('[abfnrtv\\\\%\'%\\"%[%]0-9xu]') then
                 return "" .. escapedChar
             end
             return escapedChar
@@ -224,7 +200,7 @@ local function processString(inputString)
             return rawCode
         end
         rawCode = rawCode:gsub("\239\187\191", "")
-        rawCode = rawCode:gsub("r\n", "\n"):gsub("r", "\n")
+        rawCode = rawCode:gsub("\r\n", "\n"):gsub("\r", "\n")
         rawCode = rawCode:gsub("\226\128\168", "\n"):gsub("\226\128\169", "\n")
         rawCode = rawCode:gsub("%-%-!%a+[^\n]*", "")
         rawCode = rawCode:gsub("([^\n]*)", function(line)
@@ -264,28 +240,16 @@ local function processString(inputString)
         local operators = {{"+=", "+"}, {"-=", "-"}, {"*=", "*"}, {"/=", "/"}, {"%%=", "%%"}, {"%^=", "^"}, {"%.%.=", ".."}}
         for _, opPair in ipairsFunction(operators) do
             local operatorAssignment, operator = opPair[1], opPair[2]
+            rawCode = rawCode:gsub( "([%a_][%w_]*)%s*" .. operatorAssignment, function(varName)
+                return varName .. " = " .. varName .. " " .. operator .. " "
+            end )
+            rawCode = rawCode:gsub( "([%a_][%w_]*%.[%a_][%w_%.]+)%s*" .. operatorAssignment, function(varName)
+                return varName .. " = " .. varName .. " " .. operator .. " "
+            end )
             rawCode = rawCode:gsub( "([%a_][%w_]*%b[])%s*" .. operatorAssignment, function(varName)
                 return varName .. " = " .. varName .. " " .. operator .. " "
             end )
-            rawCode = rawCode:gsub( "([%a_][%w_]*[%.%a_%d][%w_%.]*%.[%a_][%w_]*)%s*" .. operatorAssignment, function(varName)
-                return varName .. " = " .. varName .. " " .. operator .. " "
-            end )
-            rawCode = rawCode:gsub( "([^%w_%.%]%):])([%a_][%w_]*)%s*" .. operatorAssignment, function(prefix, varName)
-                return prefix .. varName .. " = " .. varName .. " " .. operator .. " "
-            end )
-            rawCode = rawCode:gsub( "^([%a_][%w_]*)%s*" .. operatorAssignment, function(varName)
-                return varName .. " = " .. varName .. " " .. operator .. " "
-            end )
         end
-
-        rawCode = rawCode:gsub("([%a_][%w_]*%b[])%s*%+%+",            "%1 = %1 + 1")
-        rawCode = rawCode:gsub("([%a_][%w_]*%.[%w_%.]*[%w_])%s*%+%+","%1 = %1 + 1")
-        rawCode = rawCode:gsub("([%a_][%w_]*)%s*%+%+",                "%1 = %1 + 1")
-        rawCode = rawCode:gsub("%+%+%s*([%a_][%w_]*%b[])",            "%1 = %1 + 1")
-        rawCode = rawCode:gsub("%+%+%s*([%a_][%w_]*%.[%w_%.]*[%w_])","%1 = %1 + 1")
-        rawCode = rawCode:gsub("%+%+%s*([%a_][%w_]*)",                "%1 = %1 + 1")
-        rawCode = rawCode:gsub("%+%+", "+")
-
         rawCode = rawCode:gsub("([^%w_])continue([^%w_])", "%1__LC__()%2")
         rawCode = rawCode:gsub("^continue([^%w_])", "__LC__()%1")
         rawCode = rawCode:gsub("([^%w_])continue$", "%1__LC__()")
@@ -355,7 +319,7 @@ local function processString(inputString)
             local extractedContent = inputString:sub(startSegment + 1, currentIndex - 1)
             extractedContent = cleanEscapes(extractedContent)
             if quoteType == 96 then
-                table.insert(outputParts, '"' .. extractedContent:gsub('"', '"') .. '"')
+                table.insert(outputParts, '"' .. extractedContent:gsub('"', '\\\\"') .. '"')
             else
                 local quoteChar = string.char(quoteType)
                 table.insert(outputParts, quoteChar .. extractedContent .. quoteChar)
@@ -473,7 +437,7 @@ local function formatValue(value)
 end
 local function formatStringLiteral(value)
     local rawValue = formatValue(value)
-    local escapedValue = rawValue:gsub("", ""):gsub('"', '"'):gsub("\n", "\n"):gsub("\r", "\r"):gsub("\t", "\t")
+    local escapedValue = rawValue:gsub("\\\\", "\\\\\\\\"):gsub('"', '\\\\"'):gsub("\n", "\n"):gsub("\\r", "\\\\r"):gsub("\\t", "\\\\t")
     return '"' .. escapedValue .. '"'
 end
 local serviceNames = {
@@ -870,20 +834,6 @@ local function isProxy(obj)
 end
 local createProxyObject
 local createProxyMethod
--- ContentId type for AT6 (SurfaceAppearance.ColorMap etc)
-local function _makeContentId(val)
-    val = val or ""
-    return setmetatable({_value = val}, {
-        __typeof = "ContentId",
-        __tostring = function() return val end,
-        __eq = function(a, b)
-            local av = typeFunction(a) == "table" and rawget(a, "_value") or a
-            local bv = typeFunction(b) == "table" and rawget(b, "_value") or b
-            return av == bv
-        end,
-        __index = function(t, k) if k == "_value" then return val end end,
-    })
-end
 local _makeVector3
 local _makeCFrame
 local function createProxyInstance(bm)
@@ -1022,7 +972,7 @@ createProxyMethod = function(methodName, parentProxy)
                 defaultParam = "color"
                 dummyArgs = {Color3.fromRGB(255, 255, 255)}
             elseif lowerMethod:match("button") then
-                defaultParam = ""
+                defaultParam = "\\"
                 dummyArgs = {}
             end
         end
@@ -1053,7 +1003,7 @@ createProxyMethod = function(methodName, parentProxy)
                         local baseIndent = string.rep("    ", dumperState.indent + 1)
                         table.insert(tableParts, keyStr .. " = " .. funcSignature .. "\n" .. table.concat(funcBody, "\n") .. "\n" .. baseIndent .. "end")
                     elseif k == callbackKey then
-                        local funcDef = defaultParam ~= "" and "function(" .. defaultParam .. ") end" or "function() end"
+                        local funcDef = defaultParam ~= "\\" and "function(" .. defaultParam .. ") end" or "function() end"
                         table.insert(tableParts, keyStr .. " = " .. funcDef)
                     else
                         table.insert(tableParts, keyStr .. " = " .. serializeValue(v))
@@ -1388,24 +1338,9 @@ createProxyObject = function(objName, isGlobal, parentProxy)
     end
     serviceMethods.Destroy = function(self)
         local parentPath = dumperState.registry[proxy] or "object"
-        -- recursively destroy all descendants first
-        local function destroyRec(p)
-            local kids = _at.children[p] or {}
-            for i = #kids, 1, -1 do
-                local child = kids[i]
-                destroyRec(child)
-                dumperState.parent_map[child] = nil
-                if dumperState.property_store[child] then
-                    dumperState.property_store[child].Parent = nil
-                end
-            end
-            _at.children[p] = {}
-        end
-        destroyRec(proxy)
         _setParent(proxy, nil)
-        if dumperState.property_store[proxy] then
-            dumperState.property_store[proxy].Parent = nil
-        end
+        dumperState.property_store[proxy] = dumperState.property_store[proxy] or {}
+        dumperState.property_store[proxy]["Parent"] = nil
         emitOutput(string.format("%s:Destroy()", parentPath))
     end
     serviceMethods.ApplyAngularImpulse = function(self, impulse)
@@ -1441,19 +1376,10 @@ createProxyObject = function(objName, isGlobal, parentProxy)
     end
     serviceMethods.ClearAllChildren = function(self)
         local parentPath = dumperState.registry[proxy] or "object"
-        local function clearRec(p)
-            local kids = _at.children[p] or {}
-            for i = #kids, 1, -1 do
-                local child = kids[i]
-                clearRec(child)
-                dumperState.parent_map[child] = nil
-                if dumperState.property_store[child] then
-                    dumperState.property_store[child].Parent = nil
-                end
-            end
-            _at.children[p] = {}
+        for _, child in ipairsFunction(_at.children[proxy] or {}) do
+            dumperState.parent_map[child] = nil
         end
-        clearRec(proxy)
+        _at.children[proxy] = {}
         emitOutput(string.format("%s:ClearAllChildren()", parentPath))
     end
     serviceMethods.Connect = function(self, func)
@@ -1463,15 +1389,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
         _at.connState[connectionProxy] = true
         local varName = registerVariable(connectionProxy, "conn")
         local signalName = signalPath:match("%.([^%.]+)$") or signalPath
-        -- AT5: store live callback for ChildAdded/DescendantAdded
-        local ownerProxy = (_at.signalOwner and _at.signalOwner[proxy]) or dumperState.parent_map[proxy] or proxy
-        if (signalName == "ChildAdded" or signalName == "DescendantAdded") and typeFunction(func) == "function" then
-            _at.signalCallbacks[ownerProxy] = _at.signalCallbacks[ownerProxy] or {}
-            _at.signalCallbacks[ownerProxy][signalName] = _at.signalCallbacks[ownerProxy][signalName] or {}
-            local cbList = _at.signalCallbacks[ownerProxy][signalName]
-            cbList[#cbList+1] = func
-            _at.connState[connectionProxy] = {list=cbList, func=func}
-        end
         local args = {"..."}
         if signalName:match("InputBegan") or signalName:match("InputEnded") or signalName:match("InputChanged") then
             args = {"input", "gameProcessed"}
@@ -1526,9 +1443,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
             elseif signalName:match("Stepped") then
                 xpcallFunction( function() for i = 1, 5 do func(osLibrary.clock(), 0.015 + i * 0.001) end end, function() end )
             elseif signalName:match("^Error$") then
-            elseif signalName == "ChildAdded" or signalName == "DescendantAdded"
-                or signalName == "ChildRemoved" or signalName == "DescendantRemoving" then
-                -- handled live via _setParent, don't fire immediately
             else
                 xpcallFunction( function() func() end, function() end )
             end
@@ -1581,13 +1495,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
     end
     serviceMethods.Disconnect = function(self)
         local connectionPath = dumperState.registry[proxy] or "connection"
-        -- remove live callback if registered
-        local state = _at.connState[proxy]
-        if typeFunction(state) == "table" and state.list and state.func then
-            for i = #state.list, 1, -1 do
-                if state.list[i] == state.func then table.remove(state.list, i) end
-            end
-        end
         _at.connState[proxy] = false
         emitOutput(string.format("%s:Disconnect()", connectionPath))
     end
@@ -2048,7 +1955,7 @@ createProxyObject = function(objName, isGlobal, parentProxy)
     serviceMethods.JSONEncode = function(self, data)
         local function encode(v)
             local tv = typeFunction(v)
-            if tv == "string" then return '"' .. v:gsub("", ""):gsub('"', '"') .. '"' end
+            if tv == "string" then return '"' .. v:gsub("\\", "\\\\"):gsub('"', '\\"') .. '"' end
             if tv == "number" or tv == "boolean" then return toStringFunction(v) end
             if tv == "table" then
                 local isArray, maxIndex, count = true, 0, 0
@@ -2075,13 +1982,13 @@ createProxyObject = function(objName, isGlobal, parentProxy)
         if _at.json[key] then return _at.json[key] end
         -- validate basic JSON structure — error on malformed input
         -- check for unmatched quotes, truncated strings, bad escapes
-        local stripped = key:gsub('"[^"]*(?:.[^"]*)*"', '""')
+        local stripped = key:gsub('"[^"\\]*(?:\\.[^"\\]*)*"', '""')
         local unmatched = key:match('"[^"]*$') -- unterminated string
         if unmatched then
             errorFunction("HttpService:JSONDecode: error parsing JSON: " .. key, 2)
         end
         -- check for common malformed patterns
-        if key:match('""}') or key:match('[^][^"/bfnrtu]') then
+        if key:match('"\\"}') or key:match('[^\\]\\[^"\\/bfnrtu]') then
             errorFunction("HttpService:JSONDecode: error parsing JSON: " .. key, 2)
         end
         if key:match("^%s*%[") then
@@ -2157,18 +2064,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
             PlaybackState = {"Begin","Playing","Paused","Completed","Cancelled"},
             EasingStyle   = {"Linear","Sine","Back","Bounce","Circular","Cubic","Elastic","Exponential","Quad","Quartic","Quintic"},
             EasingDirection = {"In","Out","InOut"},
-            ActionType    = {"Nothing","Pause","Lose","Draw","Win"},
-            VelocityConstraintMode = {"Vector","Plane","Line"},
-            Material      = {"Plastic","SmoothPlastic","Neon","Wood","Metal","Glass","Grass","Sand","Fabric"},
-            PartType      = {"Ball","Block","Cylinder"},
-            SurfaceType   = {"Smooth","Glue","Weld","Studs","Inlet","Universal","Hinge","Motor"},
-            CreatorType   = {"User","Group"},
-            MembershipType= {"None","Premium"},
-            CameraType    = {"Custom","Follow","Fixed","Attach","Track","Watch","Scriptable"},
-            ReverbType    = {"NoReverb","GenericReverb","SmallRoom","LargeRoom","Hall"},
-            Font          = {"Legacy","Arial","ArialBold","SourceSans","SourceSansBold","GothamBold","Gotham"},
-            Limb          = {"Head","LeftArm","RightArm","LeftLeg","RightLeg","Torso","Unknown"},
-            ConnectionError = {"OK","Unknown","ConnectErrors","Disconnect","Unauthorized","NotFound","Forbidden","TooManyRequests","ServiceUnavailable","GatewayTimeout"},
         }
         local names = knownItems[enumTypeName] or {"Unknown"}
         local items = {}
@@ -2451,21 +2346,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
         if key == "PlaceId" or key == "placeId" then return numericArg end
         if key == "GameId" or key == "gameId" then return numericArg + 864197532 end
         if key == "Parent" then return dumperState.parent_map[proxy] end
-        -- DistributedGameTime ticking (must be before property_store read)
-        if key == "DistributedGameTime" then
-            if not _at._dgtClock then
-                -- initialize ticking from current stored value on first access
-                local props = dumperState.property_store[proxy]
-                _at._dgtBase = (props and props[key]) or 1
-                _at._dgtClock = osLibrary.clock()
-            end
-            return _at._dgtBase + (osLibrary.clock() - _at._dgtClock)
-        end
-        -- AT6: SurfaceAppearance ContentId properties
-        local className = dumperState.property_store[proxy] and dumperState.property_store[proxy].ClassName
-        if className == "SurfaceAppearance" and (key == "ColorMap" or key == "NormalMap" or key == "RoughnessMap" or key == "MetalnessMap") then
-            return _makeContentId("")
-        end
         if dumperState.property_store[proxy] and dumperState.property_store[proxy][key] ~= nil then
             return dumperState.property_store[proxy][key]
         end
@@ -2500,9 +2380,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
                     ["Enum.KeyCode.Space"]=32,["Enum.KeyCode.E"]=69,
                     ["Enum.Font.GothamBold"]=11,["Enum.Font.Gotham"]=4,
                     ["Enum.MembershipType.None"]=0,["Enum.MembershipType.Premium"]=4,
-                    ["Enum.ActionType.Nothing"]=0,["Enum.ActionType.Pause"]=1,["Enum.ActionType.Lose"]=2,["Enum.ActionType.Draw"]=3,["Enum.ActionType.Win"]=4,
-                    ["Enum.ConnectionError.OK"]=0,["Enum.ConnectionError.Unknown"]=1,["Enum.ConnectionError.ConnectErrors"]=2,["Enum.ConnectionError.Disconnect"]=3,["Enum.ConnectionError.Unauthorized"]=4,["Enum.ConnectionError.NotFound"]=5,["Enum.ConnectionError.Forbidden"]=6,["Enum.ConnectionError.TooManyRequests"]=7,["Enum.ConnectionError.ServiceUnavailable"]=8,["Enum.ConnectionError.GatewayTimeout"]=9,
-                    ["Enum.VelocityConstraintMode.Vector"]=0,["Enum.VelocityConstraintMode.Plane"]=1,["Enum.VelocityConstraintMode.Line"]=2,
                 }
                 return enumValues[pathName] or 0
             end
@@ -2563,14 +2440,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
         if key == "Character" then
             local charProxy = createProxyObject("Character", false, proxy)
             dumperState.property_store[charProxy] = {Name = "Character", ClassName = "Model"}
-            -- AT3: seed Animate LocalScript as child of character
-            if not _at.animateScript then
-                local animProxy = createProxyObject("Animate", false, charProxy)
-                dumperState.registry[animProxy] = "Animate"
-                dumperState.property_store[animProxy] = {Name = "Animate", ClassName = "LocalScript", Parent = charProxy}
-                _setParent(animProxy, charProxy)
-                _at.animateScript = animProxy
-            end
             return charProxy
         end
         if key == "Humanoid" then
@@ -2593,21 +2462,8 @@ createProxyObject = function(objName, isGlobal, parentProxy)
             dumperState.property_store[camProxy] = {CFrame = CFrame.new(0, 10, 0), FieldOfView = 70, ViewportSize = Vector2.new(1920, 1080)}
             return camProxy
         end
-        if key == "Terrain" then
-            if not _at.terrainProxy then
-                local tp = createProxyObject("Terrain", false, proxy)
-                dumperState.property_store[tp] = {ClassName="Terrain",Name="Terrain",Parent=proxy,WaterWaveSpeed=100,WaterWaveSize=0.5}
-                _at.terrainProxy = tp
-            end
-            return _at.terrainProxy
-        end
         if key == "CameraType" then return Enum.CameraType.Custom end
         if key == "CameraSubject" then return createProxyObject("Humanoid", false, proxy) end
-        if key == "DistributedGameTime" then
-            if _at._dgtBase and _at._dgtClock then
-                return _at._dgtBase + (osLibrary.clock() - _at._dgtClock)
-            end
-        end
         local constants = {
             Health = 100, MaxHealth = 100, WalkSpeed = 16, JumpPower = 50, JumpHeight = 7.2, HipHeight = 2,
             Transparency = 0, Mass = 1, Value = 0, TimePosition = 0, TimeLength = 1, Volume = 0.5,
@@ -2640,17 +2496,7 @@ createProxyObject = function(objName, isGlobal, parentProxy)
             return UDim2.new(1, 0, 1, 0)
         end
         if key == "CFrame" then return CFrame.new(0, 5, 0) end
-        if key == "Velocity" or key == "AssemblyLinearVelocity" then
-            -- AT4: if a LinearVelocity constraint is attached to this part, reflect its VectorVelocity
-            for _, child in ipairsFunction(_at.children[proxy] or {}) do
-                local cprops = dumperState.property_store[child]
-                if cprops and cprops.ClassName == "LinearVelocity" then
-                    local vv = cprops.VectorVelocity
-                    if vv and typeof(vv) == "Vector3" then return vv end
-                end
-            end
-            return Vector3.new(0, 0, 0)
-        end
+        if key == "Velocity" or key == "AssemblyLinearVelocity" then return Vector3.new(0, 0, 0) end
         if key == "RotVelocity" or key == "AssemblyAngularVelocity" then
             local imp = dumperState.property_store[proxy] and dumperState.property_store[proxy]["_angularImpulse"]
             if imp and _at.vectors[imp] then
@@ -2695,9 +2541,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
                     ["Enum.KeyCode.Space"]=32,["Enum.KeyCode.E"]=69,
                     ["Enum.Font.GothamBold"]=11,["Enum.Font.Gotham"]=4,
                     ["Enum.MembershipType.None"]=0,["Enum.MembershipType.Premium"]=4,
-                    ["Enum.ActionType.Nothing"]=0,["Enum.ActionType.Pause"]=1,["Enum.ActionType.Lose"]=2,["Enum.ActionType.Draw"]=3,["Enum.ActionType.Win"]=4,
-                    ["Enum.ConnectionError.OK"]=0,["Enum.ConnectionError.Unknown"]=1,["Enum.ConnectionError.ConnectErrors"]=2,["Enum.ConnectionError.Disconnect"]=3,["Enum.ConnectionError.Unauthorized"]=4,["Enum.ConnectionError.NotFound"]=5,["Enum.ConnectionError.Forbidden"]=6,["Enum.ConnectionError.TooManyRequests"]=7,["Enum.ConnectionError.ServiceUnavailable"]=8,["Enum.ConnectionError.GatewayTimeout"]=9,
-                    ["Enum.VelocityConstraintMode.Vector"]=0,["Enum.VelocityConstraintMode.Plane"]=1,["Enum.VelocityConstraintMode.Line"]=2,
                 }
                 return enumValues[pathName] or 0
             end
@@ -2718,11 +2561,9 @@ createProxyObject = function(objName, isGlobal, parentProxy)
         local signalNames = {"Changed", "ChildAdded", "ChildRemoved", "DescendantAdded", "DescendantRemoving", "Touched", "TouchEnded", "InputBegan", "InputEnded", "InputChanged", "MouseButton1Click", "MouseButton1Down", "MouseButton1Up", "MouseButton2Click", "MouseButton2Down", "MouseButton2Up", "MouseEnter", "MouseLeave", "MouseMoved", "MouseWheelForward", "MouseWheelBackward", "Activated", "Deactivated", "FocusLost", "FocusGained", "Focused", "Heartbeat", "RenderStepped", "Stepped", "CharacterAdded", "CharacterRemoving", "CharacterAppearanceLoaded", "PlayerAdded", "PlayerRemoving", "AncestryChanged", "AttributeChanged", "Died", "FreeFalling", "GettingUp", "Jumping", "Running", "Seated", "Swimming", "StateChanged", "HealthChanged", "MoveToFinished", "OnClientEvent", "OnServerEvent", "OnClientInvoke", "OnServerInvoke", "Completed", "DidLoop", "Stopped", "CaptureBegan", "Button1Down", "Button1Up", "Button2Down", "Button2Up", "Idle", "Move", "TextChanged", "ReturnPressedFromOnScreenKeyboard", "Triggered", "TriggerEnded", "Error", "Event", "AxisChanged", "JumpRequest", "DevTouchMovementModeChanged", "DevComputerMovementModeChanged", "GraphicsQualityChangeRequest", "MenuOpened", "MenuClosed", "PointerAction", "TouchStarted", "TouchMoved", "TouchEnded", "TouchTap", "TouchLongPress", "TouchPinch", "TouchRotate", "TouchSwipe", "GamepadConnected", "GamepadDisconnected", "WindowFocused", "WindowFocusReleased"}
         for _, sig in ipairsFunction(signalNames) do
             if key == sig then
-                local sigProxy = createProxyObject(pathName .. "." .. key, false, nil)
+                local sigProxy = createProxyObject(pathName .. "." .. key, false, proxy)
                 dumperState.registry[sigProxy] = pathName .. "." .. key
                 _at.typeOverride[sigProxy] = "RBXScriptSignal"
-                _at.signalOwner = _at.signalOwner or {}
-                _at.signalOwner[sigProxy] = proxy  -- track owner without triggering _setParent
                 return sigProxy
             end
         end
@@ -2754,16 +2595,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
             AssemblyMass = true,
             AssemblyRootPart = true,
             CurrentCamera = true,
-            PrivateServerOwnerId = true,
-            PrivateServerId = true,
-            JobId = true,
-            PlaceId = true,
-            GameId = true,
-            PlaceVersion = true,
-            UserId = true,
-            FloorMaterial = true,
-            MoveDirection = true,
-            SeatPart = true,
         }
         if _readOnlyProps[key] then
             errorFunction(toStringFunction(key) .. " is not a valid member of " .. (dumperState.registry[proxy] or formattedName or "Instance"), 2)
@@ -2772,17 +2603,6 @@ createProxyObject = function(objName, isGlobal, parentProxy)
         local prop = formatValue(key)
         dumperState.property_store[proxy] = dumperState.property_store[proxy] or {}
         dumperState.property_store[proxy][key] = val
-        local _cls2 = (dumperState.property_store[proxy] or {}).ClassName or ""
-        if key == "CameraMinZoomDistance" then
-            local n = tonumber(val) or 0; if n < 0 then n = 0 end
-            dumperState.property_store[proxy][key] = n
-        elseif key == "CameraMaxZoomDistance" then
-            local n = tonumber(val) or 400; if n < 0 then n = 0 end
-            dumperState.property_store[proxy][key] = n
-        elseif _cls2 == "Terrain" and key == "WaterWaveSpeed" then
-            local n = tonumber(val) or 100; if n > 100 then n = 100 end; if n < 0 then n = 0 end
-            dumperState.property_store[proxy][key] = n
-        end
         if key == "Parent" then
             _setParent(proxy, isProxy(val) and val or nil)
         end
@@ -3179,9 +2999,6 @@ setmetatable(UDim2, {__call = function(_, ...) return _.new(...) end})
 Color3 = {
     new = function(r, g, b)
         local rv, gv, bv = _num(r), _num(g), _num(b)
-        if rv < 0 or rv > 1 or gv < 0 or gv > 1 or bv < 0 or bv > 1 then
-            errorFunction("R, G, and B must each be in the range [0, 1]", 2)
-        end
         return setmetatable({R = rv, G = gv, B = bv}, {
             __typeof = "Color3",
             __tostring = function(self) return string.format("[R:%g, G:%g, B:%g]", self.R, self.G, self.B) end,
@@ -3402,8 +3219,6 @@ Instance = {new = function(className, parent)
             Configuration=1,LocalizationTable=1,
             NoCollisionConstraint=1,RigidConstraint=1,
             EditableMesh=1,EditableImage=1,
-            LinearVelocity=1,AngularVelocity=1,LineForce=1,VectorForce=1,Torque=1,
-            SurfaceAppearance=1,SpecialMesh=1,SelectionBox=1,
         }
         if not _validClasses[name] then
             errorFunction("Unable to create an Instance of type \"" .. name .. "\"", 2)
@@ -3444,8 +3259,6 @@ Instance = {new = function(className, parent)
             Attachment          = {},
             AlignPosition       = {RigidityEnabled=false, MaxForce=1e6, MaxVelocity=1e6, Responsiveness=200},
             AlignOrientation    = {RigidityEnabled=false, MaxTorque=1e6, MaxAngularVelocity=1e6, Responsiveness=200},
-            LinearVelocity      = {MaxForce=0, VectorVelocity=nil, VelocityConstraintMode=nil, Attachment0=nil},
-            SurfaceAppearance   = {ColorMap=nil, NormalMap=nil, RoughnessMap=nil, MetalnessMap=nil},
         }
         local defaults = _classDefaults[name] or {}
         defaults.ClassName = name
@@ -3489,10 +3302,7 @@ local function seedCoreRobloxInstances()
     dumperState.registry[lp] = "LocalPlayer"
     dumperState.property_store[lp] = {
         Name = "Player", ClassName = "Player", Parent = players, UserId = 1, DisplayName = "Player",
-        MembershipType = Enum.MembershipType.None, FollowUserId = 0, AccountAge = 1000,
-        CameraMinZoomDistance = 0, CameraMaxZoomDistance = 400,
-        AutoJumpEnabled = true, Neutral = true, Team = nil, LocaleId = "en-us",
-        SimulationRadius = 0, MaxSimulationRadius = 0,
+        MembershipType = Enum.MembershipType.None, FollowUserId = 0, AccountAge = 1000
     }
     _setParent(lp, players)
 
@@ -3686,7 +3496,7 @@ local function createGetGenv(path)
             if d then return d .. "." .. prop end
             return prop
         else
-            local escaped = prop:gsub("'", "'")
+            local escaped = prop:gsub("'", "\\\\'")
             if d then return d .. "['" .. escaped .. "']" end
             return "['" .. escaped .. "']"
         end
@@ -3831,8 +3641,8 @@ local exploitFuncs = {
     end,
     setclipboard = function(data) emitOutput(string.format("setclipboard(%s)", serializeValue(data))) end,
     getclipboard = function() return '"' end,
-    identifyexecutor = function() return "senvielle", "1.9" end,
-    getexecutorname = function() return "senvielle" end,
+    identifyexecutor = function() return "Kolenvlogger", "1.0" end,
+    getexecutorname = function() return "Kolenvlogger" end,
     gethui = function()
         local hui = createProxyObject("HiddenUI", false)
         registerVariable(hui, "HiddenUI")
@@ -3914,46 +3724,15 @@ local exploitFuncs = {
     getnilinstances = function() return {} end,
     getgc = function() return {} end,
     getscripts = function() return {} end,
-    getrunningscripts = function()
-        -- AT3: must include the Animate script from character, but NOT arbitrary LocalScript instances
-        local result = {}
-        if _at.animateScript then result[#result+1] = _at.animateScript end
-        return result
-    end,
+    getrunningscripts = function() return {} end,
     getloadedmodules = function() return {} end,
     getcallingscript = function() return script end,
-    -- script info stubs
-    getscriptbytecode = function(s) return "" end,
-    getscripthash = function(s) return "0000000000000000000000000000000000000000000000000000000000000000" end,
-    getscriptclosure = function(s) return function() end end,
-    -- property helpers
-    isscriptable = function(obj, prop) return true end,
-    setscriptable = function(obj, prop, state) return state end,
-    getcallbackvalue = function(obj, prop) return nil end,
-    -- clipboard
-    setrbxclipboard = function(data) emitOutput(string.format("setrbxclipboard(%s)", serializeValue(data))) return true end,
-    -- console extras
-    rconsolesettitle = function(title) end,
-    -- gc / registry
-    getreg = function() return {} end,
-    filtergc = function(kind, opts, returnOne) return returnOne and nil or {} end,
-    -- function utils
-    getfunctionhash = function(f) return "0000000000000000000000000000000000000000" end,
-    restorefunction = function(f) end,
-    -- misc
-    messagebox = function(text, caption, flags)
-        emitOutput(string.format("messagebox(%s, %s, %s)", serializeValue(text), serializeValue(caption), serializeValue(flags)))
-        return 1
-    end,
     readfile = function(file)
         emitOutput(string.format("readfile(%s)", formatStringLiteral(file)))
         return _at.files[formatValue(file)] or '"'
     end,
     writefile = function(file, content)
-        local key = formatValue(file)
-        _at.files[key] = formatValue(content)
-        _at.files_hidden = _at.files_hidden or {}
-        _at.files_hidden[key] = true  -- mark as hidden from listfiles
+        _at.files[formatValue(file)] = formatValue(content)
         emitOutput(string.format("writefile(%s, %s)", formatStringLiteral(file), serializeValue(content)))
     end,
     appendfile = function(file, content)
@@ -3964,17 +3743,12 @@ local exploitFuncs = {
     loadfile = function(file) return function() return createProxyObject("loaded_file", false) end end,
     listfiles = function(folder)
         local base = formatValue(folder or "")
-        -- normalize: strip leading slash so "/" matches all files
-        base = base:gsub("^/+", "")
         local result = {}
         for name in pairsFunction(_at.folders) do
             if base == "" or name:match("^" .. base:gsub("([^%w])", "%%%1")) then table.insert(result, name) end
         end
         for name in pairsFunction(_at.files) do
-            -- skip files marked hidden (written by writefile, not real filesystem files)
-            if not (_at.files_hidden and _at.files_hidden[name]) then
-                if base == "" or name:match("^" .. base:gsub("([^%w])", "%%%1")) then table.insert(result, name) end
-            end
+            if base == "" or name:match("^" .. base:gsub("([^%w])", "%%%1")) then table.insert(result, name) end
         end
         return result
     end,
@@ -4001,31 +3775,6 @@ local exploitFuncs = {
         _at.files[formatValue(file)] = nil
         emitOutput(string.format("delfile(%s)", formatStringLiteral(file)))
     end,
-    DrawingImmediate = (function()
-        local function makePaint()
-            local cbs = {}
-            return {
-                Connect = function(self, fn)
-                    cbs[#cbs+1] = fn
-                    -- return plain table so typeof(cn)=="table" passes the AT check
-                    return {
-                        Disconnect = function(self)
-                            for i,v in ipairs(cbs) do if v==fn then table.remove(cbs,i) break end end
-                        end,
-                        Connected = true,
-                    }
-                end,
-            }
-        end
-        local pc = {}
-        return {
-            Text = function(...) emitOutput("DrawingImmediate.Text(...)") end,
-            Line = function(...) emitOutput("DrawingImmediate.Line(...)") end,
-            Circle = function(...) emitOutput("DrawingImmediate.Circle(...)") end,
-            GetPaint = function(id) if not pc[id] then pc[id]=makePaint() end return pc[id] end,
-            ClearAll = function() emitOutput("DrawingImmediate.ClearAll()") end,
-        }
-    end)(),
     Drawing = {
         new = function(type)
             local t = formatValue(type)
@@ -4050,7 +3799,7 @@ local exploitFuncs = {
         decrypt = function(s, k) return s end,
         hash = function(s) return "hash" end,
         generatekey = function(len) return string.rep("0", len or 32) end,
-        generatebytes = function(len) return string.rep("0", len or 16) end
+        generatebytes = function(len) return string.rep("\\0", len or 16) end
     },
     base64_encode = function(s) return s end,
     base64_decode = function(s) return s end,
@@ -4124,31 +3873,8 @@ local exploitFuncs = {
     setfpscap = function(cap) emitOutput(string.format("setfpscap(%s)", serializeValue(cap))) end,
     getfpscap = function() return 60 end,
     isnetworkowner = function(part) return true end,
-    gethiddenproperty = function(instance, prop)
-        if not isProxy(instance) then return nil, false end
-        local props = dumperState.property_store[instance]
-        if props and props[prop] ~= nil then return props[prop], true end
-        return nil, false
-    end,
-    sethiddenproperty = function(instance, prop, val)
-        if isProxy(instance) then
-            local props = dumperState.property_store[instance]
-            if props then
-                if prop == "DistributedGameTime" then
-                    -- don't store the set value; just record a tick base from current real value
-                    -- so subsequent reads keep ticking from where they were
-                    if not _at._dgtClock then
-                        _at._dgtBase = (props[prop] or 1)
-                        _at._dgtClock = osLibrary.clock()
-                    end
-                    -- intentionally do NOT store val - real Roblox ignores the set
-                else
-                    props[prop] = val
-                end
-            end
-        end
-        emitOutput(string.format("sethiddenproperty(%s, %s, %s)", serializeValue(instance), formatStringLiteral(prop), serializeValue(val)))
-    end,
+    gethiddenproperty = function(instance, prop) return nil end,
+    sethiddenproperty = function(instance, prop, val) emitOutput(string.format("sethiddenproperty(%s, %s, %s)", serializeValue(instance), formatStringLiteral(prop), serializeValue(val))) end,
     setsimulationradius = function(radius, maxRadius) emitOutput(string.format("setsimulationradius(%s%s)", serializeValue(radius), maxRadius and ", " .. serializeValue(maxRadius) or "")) end,
     getspecialinfo = function(instance) return {} end,
     saveinstance = function(options) emitOutput(string.format("saveinstance(%s)", serializeValue(options or {}))) end,
@@ -4361,11 +4087,8 @@ table.clone = table.clone or function(t)
     for k, v in pairsFunction(t) do out[k] = v end
     return out
 end
-do
-    local _frozen = setmetatable({}, {__mode="k"})
-    table.freeze = table.freeze or function(t) _frozen[t] = true; return t end
-    table.isfrozen = table.isfrozen or function(t) return _frozen[t] == true end
-end
+table.freeze = table.freeze or function(t) return t end
+table.isfrozen = table.isfrozen or function(t) return false end
 table.clear = table.clear or function(t) for k in pairsFunction(t) do t[k] = nil end end
 table.find = table.find or function(t, val, init)
     for i = init or 1, #t do
@@ -4376,11 +4099,8 @@ end
 table.clear = table.clear or function(t)
     for k in pairs(t) do t[k] = nil end
 end
-do
-    local _frozen = setmetatable({}, {__mode="k"})
-    table.freeze = table.freeze or function(t) _frozen[t] = true; return t end
-    table.isfrozen = table.isfrozen or function(t) return _frozen[t] == true end
-end
+table.freeze = table.freeze or function(t) return t end
+table.isfrozen = table.isfrozen or function() return false end
 table.clone = table.clone or function(t)
     local out = {}
     for k, v in pairs(t) do out[k] = v end
@@ -4443,35 +4163,17 @@ _G.pairs = pairs
 _G.ipairs = ipairs
 _G.math = math
 _G.table = table
--- override string.dump to prevent source/internal name leaking
+-- override string.dump to error on exploit/proxy functions like real Roblox
 local _realStringDump = string.dump
--- build a set of all sandbox-internal functions to block
-local _blockedDump = setmetatable({}, {__mode="k"})
 string.dump = function(f, ...)
     if isProxy(f) then
         errorFunction("unable to dump given function", 2)
     end
-    if _blockedDump[f] then
-        errorFunction("unable to dump given function", 2)
-    end
-    -- block exploit funcs
+    -- exploit funcs registered in _G are not dumpable
     for name, val in pairsFunction(exploitFuncs) do
         if val == f then errorFunction("unable to dump given function", 2) end
     end
-    -- block any function whose bytecode would leak "dumper.lua" or internal names
-    local ok, bc = pcallFunction(_realStringDump, f)
-    if ok and typeFunction(bc) == "string" then
-        if bc:find("dumper%.lua", 1, true) or
-           bc:find("emitOutput", 1, true) or
-           bc:find("serializeValue", 1, true) or
-           bc:find("ipairsFunction", 1, true) or
-           bc:find("pairsFunction", 1, true) or
-           bc:find("dumperState", 1, true) then
-            errorFunction("unable to dump given function", 2)
-        end
-        return bc
-    end
-    errorFunction("unable to dump given function", 2)
+    return _realStringDump(f, ...)
 end
 _G.string = string
 _G.os = os
@@ -4673,13 +4375,11 @@ typeof = function(x)
         if _at.typeOverride[x] then return _at.typeOverride[x] end
         local regName = dumperState.registry[x]
         if regName then
-            if regName == "Enum" then return "Enums" end
-            if regName:match("^Enum%.[^%.]+$") then return "Enum" end
-            if regName:match("^Enum%.[^%.]+%.[^%.]+$") then return "EnumItem" end
             if regName:match("Vector3") then return "Vector3" end
             if regName:match("CFrame") then return "CFrame" end
             if regName:match("Color3") then return "Color3" end
             if regName:match("UDim") then return "UDim2" end
+            if regName:match("Enum") then return "EnumItem" end
         end
         return "Instance"
     end
@@ -4989,7 +4689,7 @@ function proxyTable.dump_file(inputPath, outputPath)
             end
         end
         if not ok or typeFunction(tb) ~= "string" then
-            return "stack traceback:\nt[RobloxGameScript]: in function <RobloxGameScript:1>"
+            return "stack traceback:\n\t[RobloxGameScript]: in function <RobloxGameScript:1>"
         end
         local lines = {}
         for line in (tb .. "\n"):gmatch("([^\n]*)\n") do
@@ -5006,7 +4706,7 @@ function proxyTable.dump_file(inputPath, outputPath)
             return "[" .. inner .. "]"
         end)
         if #cleaned < 20 then
-            return "stack traceback:\nt[RobloxGameScript]: in function <RobloxGameScript:1>"
+            return "stack traceback:\n\t[RobloxGameScript]: in function <RobloxGameScript:1>"
         end
         return cleaned
     end
@@ -5022,7 +4722,7 @@ function proxyTable.dump_file(inputPath, outputPath)
     }
     local _SAFE_OS = {
         clock = function() local _bc=rawget(_G,"_bypassClock"); return _bc and _bc() or osLibrary.clock() end,
-        time  = osLibrary.time,
+        time  = function() return nil end,
         date  = osLibrary.date,
     }
     local env = setmetatable({
@@ -5202,7 +4902,7 @@ function proxyTable.dump_string(code, outputPath)
     return true, getFullOutput()
 end
 do
-    local bypassPath = (arg and arg[0] and arg[0]:match("^(.+[/])")) or ""
+    local bypassPath = (arg and arg[0] and arg[0]:match("^(.+[\\/])")) or ""
     local ok, err = pcall(dofile, bypassPath .. "bypass.lua")
     if not ok then
         local ok2 = pcall(dofile, "bypass.lua")
